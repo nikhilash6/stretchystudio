@@ -168,21 +168,26 @@ Architectural decisions to lock in here:
 
 Exit criteria: drag any PNG into the app → see it triangulated and rendered via WebGL → drag vertices → see texture warp → undo/redo works → save/load roundtrip via JSON download.
 
-### M2 — Auto Mesh + PSD Import
+### M2 — Auto Mesh, PSD Import & View Controls
 
-**Goal:** Multi-layer files become multi-part scenes automatically.
+**Goal:** Multi-layer support and granular control over mesh topology and visibility.
 
 Tasks:
 - **PSD import** ([src/io/psd.js](src/io/psd.js)): use `ag-psd` to extract layers → array of `{ name, x, y, width, height, imageData, blendMode }`. Filter group/folder layers to flat list for v0.1 (group hierarchy comes in M3).
-- **Per-layer mesh generation:** loop layers, dispatch to mesh worker, create one `part` node per layer with the layer's name as `id`.
-- **Detail slider** (Low/Med/High) per layer in inspector → re-runs mesh worker with different `gridSpacing` / `numEdgePoints` presets from [INTEGRATION_GUIDE.md §Parameter Tuning Guide](docs/INTEGRATION_GUIDE.md).
-- **Multi-part draw pass:** sort parts by `draw_order` ascending each frame, issue one draw call per part. Add per-part opacity uniform.
-- **Layer panel v1:** real list with reorder via draw_order column. Click to select. Selected part highlighted on canvas (draw mesh wireframe overlay).
-- **Manual mesh editing overlay:** toggle in inspector. Click empty space to add vertex (re-triangulates), click vertex + Delete to remove.
+- **Per-layer mesh generation:** loop layers, dispatch to mesh worker, create one `part` node per layer.
+- **Auto-Mesh Settings UI**: Add a dedicated "Mesh Generation" panel in the inspector with sliders for:
+  - `alphaThreshold`, `smoothPasses`, `gridSpacing`, `edgePadding`, `numEdgePoints`.
+- **Remesh Trigger**: Button to re-dispatch the mesh worker for the selected part using current sliders.
+- **Visibility Options**: Global or per-part toggles for:
+  - `showImage`, `showWireframe`, `showVertices`, `showEdgeOutline`.
+- **Enhanced Overlays**: Update `ScenePass` to respect toggles and render a highlighted edge outline.
+- **Layer panel v1**: Real list with reorder via draw_order column. Click to select.
+- **Manual mesh editing overlay**: Toggle in inspector. Click to add vertex, vertex + Delete to remove.
 
-Open question to resolve in M2: do we keep the prototype's hand-rolled Bowyer-Watson or switch to `delaunator`? Recommendation: switch — it's the de facto standard, MIT, and frees us from maintaining numerical edge cases.
+**Resolved Decisions:**
+- **Triangulation**: Switched to `delaunator` (M1).
 
-Exit criteria: drop a multi-layer PSD → all layers appear as parts with auto-meshes → reorder draw order → adjust per-layer detail → manually tweak vertices.
+Exit criteria: drop a multi-layer PSD → all layers appear as parts → per-part remeshing with custom density/edge padding → toggle wireframe/vertex visibility → manually tweak vertices.
 
 ### M3 — Deformer Tree (Rotation + Groups)
 

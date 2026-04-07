@@ -1,4 +1,5 @@
 import React from 'react';
+import EditorLayout from '@/app/layout/EditorLayout';
 import { Palette, Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTheme, AVAILABLE_FONTS } from '@/contexts/ThemeProvider';
@@ -8,9 +9,12 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Demo } from '@/components/Demo';
+import { useUndoRedo } from '@/hooks/useUndoRedo';
 
 function App() {
+  // Mount global undo/redo keyboard handler
+  useUndoRedo();
+
   const { 
     themeMode, setThemeMode, 
     openThemeModal, 
@@ -34,7 +38,7 @@ function App() {
 
   return (
     <>
-      <Demo />
+      <EditorLayout />
       <Popover>
         <PopoverTrigger asChild>
           <Button
