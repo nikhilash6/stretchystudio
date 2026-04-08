@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useCallback } from 'react';
 import {
   ResizableHandle,
   ResizablePanel,
@@ -6,8 +6,20 @@ import {
 } from '@/components/ui/resizable';
 import CanvasViewport from '@/components/canvas/CanvasViewport';
 import { LayerPanel } from '@/components/layers/LayerPanel';
+import { Inspector } from '@/components/inspector/Inspector';
 
 export default function EditorLayout() {
+  /**
+   * remeshRef is a stable ref that CanvasViewport populates.
+   * Inspector calls remeshRef.current(partId, opts) to trigger remeshing
+   * without needing to lift state up or use context.
+   */
+  const remeshRef = useRef(null);
+
+  const handleRemesh = useCallback((partId, opts) => {
+    remeshRef.current?.(partId, opts);
+  }, []);
+
   return (
     <div className="flex h-screen w-full flex-col bg-background text-foreground overflow-hidden">
       {/* Top bar */}
@@ -15,7 +27,7 @@ export default function EditorLayout() {
         <span className="font-semibold text-sm select-none tracking-tight">Stretchy Studio</span>
         <span className="text-xs text-muted-foreground border border-border/50 px-1.5 py-0.5 font-mono">v0.1</span>
         <span className="flex-1" />
-        <span className="text-xs text-muted-foreground hidden sm:block">Drop a PNG onto the canvas to start</span>
+        <span className="text-xs text-muted-foreground hidden sm:block">Drop a PNG or PSD onto the canvas · Scroll to zoom · Alt+drag to pan</span>
       </header>
 
       {/* Workspace */}
@@ -38,7 +50,7 @@ export default function EditorLayout() {
           <ResizablePanel defaultSize={62}>
             <ResizablePanelGroup direction="vertical">
               <ResizablePanel defaultSize={85}>
-                <CanvasViewport />
+                <CanvasViewport remeshRef={remeshRef} />
               </ResizablePanel>
               <ResizableHandle />
               <ResizablePanel defaultSize={15} minSize={8} collapsible>
@@ -61,8 +73,8 @@ export default function EditorLayout() {
               <div className="px-3 py-2 border-b shrink-0">
                 <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Inspector</h2>
               </div>
-              <div className="flex-1 overflow-y-auto p-3">
-                <p className="text-xs text-muted-foreground">Select a layer to inspect it.</p>
+              <div className="flex-1 overflow-hidden">
+                <Inspector onRemesh={handleRemesh} />
               </div>
             </div>
           </ResizablePanel>

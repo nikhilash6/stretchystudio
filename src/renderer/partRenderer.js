@@ -215,6 +215,29 @@ export class PartRenderer {
   }
 
   /**
+   * Draw the boundary edge loop as a LINE_LOOP.
+   * Caller must have already called gl.useProgram(wireProgram).
+   * @param {string} partId
+   * @param {Float32Array} mvp
+   * @param {WebGLUniformLocation} uMvp
+   * @param {WebGLUniformLocation} uColor
+   */
+  drawEdgeOutline(partId, mvp, uMvp) {
+    const { gl } = this;
+    const state = this._parts.get(partId);
+    if (!state || !state.vao || state.edgeIndexCount === 0) return;
+
+    gl.uniformMatrix3fv(uMvp, false, mvp);
+
+    gl.bindVertexArray(state.vao);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, state.edgeIbo);
+    gl.drawElements(gl.LINE_LOOP, state.edgeIndexCount, gl.UNSIGNED_SHORT, 0);
+    // Restore triangle IBO
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, state.ibo);
+    gl.bindVertexArray(null);
+  }
+
+  /**
    * Draw vertices as points.
    * @param {string} partId
    * @param {Float32Array} mvp
