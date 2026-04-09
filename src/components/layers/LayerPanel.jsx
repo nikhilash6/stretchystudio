@@ -59,18 +59,25 @@ function ChevronIcon({ open }) {
 
 /* ── Depth Tab ────────────────────────────────────────────────────────────── */
 
-function DepthTabRow({ node, parentGroup, isSelected, onSelect, onMoveUp, onMoveDown, onToggleVisible, onOpenCtxMenu }) {
+function DepthTabRow({ node, parentGroup, isSelected, onSelect, onToggleVisible, onOpenCtxMenu, onDragStart, onDragOver, onDrop, isDragOver }) {
   return (
     <div
+      draggable
       className={`
         flex items-center gap-1 px-2 py-1.5 text-sm rounded cursor-pointer transition-colors select-none
         ${isSelected
           ? 'bg-primary/20 text-primary border border-primary/40'
-          : 'hover:bg-muted text-foreground border border-transparent'
+          : isDragOver
+            ? 'bg-accent border border-accent-foreground/30'
+            : 'hover:bg-muted text-foreground border border-transparent'
         }
       `}
       onClick={() => onSelect(node.id)}
       onContextMenu={(e) => { e.preventDefault(); onOpenCtxMenu(e, node.id); }}
+      onDragStart={(e) => onDragStart(e, node.id)}
+      onDragOver={(e) => { e.preventDefault(); onDragOver(node.id); }}
+      onDragLeave={() => onDragOver(null)}
+      onDrop={(e) => { e.preventDefault(); onDrop(node.id); }}
     >
       {/* Type icon */}
       <span className="shrink-0 w-3 h-3 text-muted-foreground flex items-center">
@@ -103,23 +110,6 @@ function DepthTabRow({ node, parentGroup, isSelected, onSelect, onMoveUp, onMove
       >
         <EyeIcon open={node.visible !== false} />
       </button>
-
-      {/* Draw order (Z) */}
-      <div className="shrink-0 flex flex-col items-center" style={{ width: 28 }}>
-        <button
-          className="text-[9px] leading-none text-muted-foreground/60 hover:text-foreground px-0.5"
-          onClick={(e) => { e.stopPropagation(); onMoveUp(node.id); }}
-          title="Move up (higher draw order)"
-        >▲</button>
-        <span className="text-[10px] tabular-nums text-muted-foreground leading-none">
-          {node.draw_order}
-        </span>
-        <button
-          className="text-[9px] leading-none text-muted-foreground/60 hover:text-foreground px-0.5"
-          onClick={(e) => { e.stopPropagation(); onMoveDown(node.id); }}
-          title="Move down (lower draw order)"
-        >▼</button>
-      </div>
     </div>
   );
 }
@@ -204,7 +194,11 @@ export function LayerPanel() {
   // Context menu state (Depth tab)
   const [ctxMenu, setCtxMenu] = useState(null); // { nodeId, x, y }
 
-  // Drag state (Groups tab)
+  // Drag state (Depth tab - reorder by draw_order)
+  const dragSourceIdDepth = useRef(null);
+  const [dragOverIdDepth, setDragOverIdDepth] = useState(null);
+
+  // Drag state (Groups tab - reparent)
   const dragNodeId = useRef(null);
   const [dragOverId, setDragOverId] = useState(null);
 
@@ -212,28 +206,6 @@ export function LayerPanel() {
   const [expanded, setExpanded] = useState(new Set());
 
   // ── Depth tab actions ─────────────────────────────────────────────────
-
-  const moveUp = useCallback((id) => {
-    updateProject((proj) => {
-      const node = proj.nodes.find(n => n.id === id);
-      if (!node) return;
-      const above = proj.nodes
-        .filter(n => n.type === 'part' && n.draw_order > node.draw_order)
-        .sort((a, b) => a.draw_order - b.draw_order)[0];
-      if (above) { const tmp = above.draw_order; above.draw_order = node.draw_order; node.draw_order = tmp; }
-    });
-  }, [updateProject]);
-
-  const moveDown = useCallback((id) => {
-    updateProject((proj) => {
-      const node = proj.nodes.find(n => n.id === id);
-      if (!node) return;
-      const below = proj.nodes
-        .filter(n => n.type === 'part' && n.draw_order < node.draw_order)
-        .sort((a, b) => b.draw_order - a.draw_order)[0];
-      if (below) { const tmp = below.draw_order; below.draw_order = node.draw_order; node.draw_order = tmp; }
-    });
-  }, [updateProject]);
 
   const toggleVisible = useCallback((id) => {
     updateProject((proj) => {
@@ -247,6 +219,42 @@ export function LayerPanel() {
   }, []);
 
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
+
+  const onDragStartDepth = useCallback((e, nodeId) => {
+    dragSourceIdDepth.current = nodeId;
+    e.dataTransfer.effectAllowed = 'move';
+  }, []);
+
+  const onDropDepth = useCallback((targetId) => {
+    const sourceId = dragSourceIdDepth.current;
+    dragSourceIdDepth.current = null;
+    setDragOverIdDepth(null);
+    if (!sourceId || sourceId === targetId) return;
+
+    updateProject((proj) => {
+      // Get all parts sorted by draw_order descending (as shown in Depth tab)
+      const parts = proj.nodes.filter(n => n.type === 'part').sort((a, b) => b.draw_order - a.draw_order);
+
+      // Find source and target indices
+      const sourceIdx = parts.findIndex(n => n.id === sourceId);
+      const targetIdx = parts.findIndex(n => n.id === targetId);
+
+      if (sourceIdx === -1 || targetIdx === -1) return;
+
+      // Remove source from its current position
+      const [source] = parts.splice(sourceIdx, 1);
+
+      // Insert above target (targetIdx might have shifted if source was before it)
+      const newTargetIdx = parts.findIndex(n => n.id === targetId);
+      parts.splice(newTargetIdx, 0, source);
+
+      // Renumber draw_order from highest to lowest (as shown in Depth tab)
+      parts.forEach((part, i) => {
+        const node = proj.nodes.find(n => n.id === part.id);
+        if (node) node.draw_order = parts.length - 1 - i;
+      });
+    });
+  }, [updateProject]);
 
   // ── Groups tab actions ────────────────────────────────────────────────
 
@@ -351,7 +359,7 @@ export function LayerPanel() {
             <span className="w-3 mr-1" />
             <span className="flex-1">Layer</span>
             <span className="w-5 text-center">👁</span>
-            <span className="w-7 text-center" title="Draw order">Z</span>
+            <span className="text-[10px] text-muted-foreground/50 ml-auto">Drag to reorder</span>
           </div>
 
           {/* Layer list */}
@@ -365,11 +373,13 @@ export function LayerPanel() {
                   node={node}
                   parentGroup={node.parent ? nodeMap.get(node.parent) : null}
                   isSelected={selection.includes(node.id)}
+                  isDragOver={dragOverIdDepth === node.id}
                   onSelect={(id) => setSelection([id])}
-                  onMoveUp={moveUp}
-                  onMoveDown={moveDown}
                   onToggleVisible={toggleVisible}
                   onOpenCtxMenu={openCtxMenu}
+                  onDragStart={onDragStartDepth}
+                  onDragOver={(id) => setDragOverIdDepth(id)}
+                  onDrop={onDropDepth}
                 />
               ))
             )}

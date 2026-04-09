@@ -1,8 +1,9 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useEditorStore } from '@/store/editorStore';
 import { useProjectStore, DEFAULT_TRANSFORM } from '@/store/projectStore';
 import { ScenePass } from '@/renderer/scenePass';
 import { importPsd } from '@/io/psd';
+import { detectCharacterFormat, organizeCharacterLayers, matchTag } from '@/io/psdOrganizer';
 import { computeWorldMatrices, mat3Inverse, mat3Identity } from '@/renderer/transforms';
 import { GizmoOverlay } from '@/components/canvas/GizmoOverlay';
 
@@ -56,13 +57,16 @@ function basename(filename) {
 ────────────────────────────────────────────────────────────────────────── */
 
 export default function CanvasViewport({ remeshRef }) {
-  const canvasRef   = useRef(null);
-  const sceneRef    = useRef(null);
-  const rafRef      = useRef(null);
-  const workersRef  = useRef(new Map());  // Map<partId, Worker> for concurrent mesh generation
-  const dragRef     = useRef(null);   // { partId, vertexIndex, startWorldX, startWorldY, startLocalX, startLocalY }
-  const panRef      = useRef(null);   // { startX, startY, panX0, panY0 }
-  const isDirtyRef  = useRef(true);
+  const canvasRef     = useRef(null);
+  const sceneRef      = useRef(null);
+  const rafRef        = useRef(null);
+  const workersRef    = useRef(new Map());  // Map<partId, Worker> for concurrent mesh generation
+  const dragRef       = useRef(null);   // { partId, vertexIndex, startWorldX, startWorldY, startLocalX, startLocalY }
+  const panRef        = useRef(null);   // { startX, startY, panX0, panY0 }
+  const isDirtyRef    = useRef(true);
+  const pendingPsdRef = useRef(null);   // { psdW, psdH, layers, partIds } while org modal is open
+
+  const [psdOrgModal, setPsdOrgModal] = useState(false);
 
   const project        = useProjectStore(s => s.project);
   const updateProject  = useProjectStore(s => s.updateProject);
@@ -131,7 +135,24 @@ export default function CanvasViewport({ remeshRef }) {
 
       updateProject((proj) => {
         const node = proj.nodes.find(n => n.id === partId);
-        if (node) node.mesh = { vertices, uvs: Array.from(uvs), triangles, edgeIndices };
+        if (node) {
+          node.mesh = { vertices, uvs: Array.from(uvs), triangles, edgeIndices };
+          
+          // If the pivot is at the default (0,0), auto-center it to the mesh bounds
+          if (node.transform && node.transform.pivotX === 0 && node.transform.pivotY === 0) {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const v of vertices) {
+              if (v.x < minX) minX = v.x;
+              if (v.x > maxX) maxX = v.x;
+              if (v.y < minY) minY = v.y;
+              if (v.y > maxY) maxY = v.y;
+            }
+            if (minX !== Infinity) {
+              node.transform.pivotX = (minX + maxX) / 2;
+              node.transform.pivotY = (minY + maxY) / 2;
+            }
+          }
+        }
       });
 
       // Clean up the worker from the map when done
@@ -206,6 +227,86 @@ export default function CanvasViewport({ remeshRef }) {
     img.src = url;
   }, [updateProject, dispatchMeshWorker]);
 
+  /* ── PSD import: finalize (shared by both organized and flat paths) ─────── */
+  const finalizePsdImport = useCallback((psdW, psdH, layers, partIds, organize) => {
+    const { meshDefaults } = editorRef.current;
+
+    // If organizing, compute group defs + per-layer draw_order / parent
+    let groupDefs = [];
+    let assignments = null;
+    if (organize) {
+      const result = organizeCharacterLayers(layers, uid);
+      groupDefs = result.groupDefs;
+      assignments = result.assignments;
+    }
+
+    updateProject((proj, ver) => {
+      proj.canvas.width  = psdW;
+      proj.canvas.height = psdH;
+
+      // Create group nodes first (so parent IDs exist when parts reference them)
+      for (const g of groupDefs) {
+        proj.nodes.push({
+          id:        g.id,
+          type:      'group',
+          name:      g.name,
+          parent:    g.parentId,
+          opacity:   1,
+          visible:   true,
+          transform: DEFAULT_TRANSFORM(),
+        });
+      }
+
+      layers.forEach((layer, i) => {
+        const partId = partIds[i];
+        const off = document.createElement('canvas');
+        off.width = psdW; off.height = psdH;
+        const ctx = off.getContext('2d');
+        const tmp = document.createElement('canvas');
+        tmp.width = layer.width; tmp.height = layer.height;
+        tmp.getContext('2d').putImageData(layer.imageData, 0, 0);
+        ctx.drawImage(tmp, layer.x, layer.y);
+        const fullImageData = ctx.getImageData(0, 0, psdW, psdH);
+
+        off.toBlob((blob) => {
+          const url = URL.createObjectURL(blob);
+          updateProject((p2) => {
+            const t = p2.textures.find(t => t.id === partId);
+            if (t) t.source = url;
+          });
+          const img2 = new Image();
+          img2.onload = () => {
+            const scene = sceneRef.current;
+            if (scene) { scene.parts.uploadTexture(partId, img2); isDirtyRef.current = true; }
+          };
+          img2.src = url;
+          dispatchMeshWorker(partId, fullImageData, {
+            ...meshDefaults,
+            gridSpacing: Math.max(20, meshDefaults.gridSpacing - 10),
+          });
+        }, 'image/png');
+
+        const assignment = assignments?.get(i);
+        proj.textures.push({ id: partId, source: '' });
+        proj.nodes.push({
+          id:         partId,
+          type:       'part',
+          name:       layer.name,
+          parent:     assignment?.parentGroupId ?? null,
+          draw_order: assignment?.drawOrder ?? (layers.length - 1 - i),
+          opacity:    layer.opacity,
+          visible:    layer.visible,
+          clip_mask:  null,
+          transform:  DEFAULT_TRANSFORM(),
+          meshOpts:   null,
+          mesh:       null,
+        });
+      });
+
+      ver.textureVersion++;
+    });
+  }, [updateProject, dispatchMeshWorker]);
+
   /* ── PSD import helper ───────────────────────────────────────────────── */
   const importPsdFile = useCallback((file) => {
     file.arrayBuffer().then((buffer) => {
@@ -216,65 +317,16 @@ export default function CanvasViewport({ remeshRef }) {
       const { width: psdW, height: psdH, layers } = parsed;
       if (!layers.length) return;
 
-      const { meshDefaults } = editorRef.current;
       const partIds = layers.map(() => uid());
 
-      updateProject((proj, ver) => {
-        proj.canvas.width  = psdW;
-        proj.canvas.height = psdH;
-
-        layers.forEach((layer, i) => {
-          const partId = partIds[i];
-          const off = document.createElement('canvas');
-          off.width = psdW; off.height = psdH;
-          const ctx = off.getContext('2d');
-          const tmp = document.createElement('canvas');
-          tmp.width = layer.width; tmp.height = layer.height;
-          tmp.getContext('2d').putImageData(layer.imageData, 0, 0);
-          ctx.drawImage(tmp, layer.x, layer.y);
-          const fullImageData = ctx.getImageData(0, 0, psdW, psdH);
-
-          off.toBlob((blob) => {
-            const url = URL.createObjectURL(blob);
-
-            updateProject((p2) => {
-              const t = p2.textures.find(t => t.id === partId);
-              if (t) t.source = url;
-            });
-
-            const img2 = new Image();
-            img2.onload = () => {
-              const scene = sceneRef.current;
-              if (scene) { scene.parts.uploadTexture(partId, img2); isDirtyRef.current = true; }
-            };
-            img2.src = url;
-
-            dispatchMeshWorker(partId, fullImageData, {
-              ...meshDefaults,
-              gridSpacing: Math.max(20, meshDefaults.gridSpacing - 10),
-            });
-          }, 'image/png');
-
-          proj.textures.push({ id: partId, source: '' });
-          proj.nodes.push({
-            id:         partId,
-            type:       'part',
-            name:       layer.name,
-            parent:     null,
-            draw_order: layers.length - 1 - i,
-            opacity:    layer.opacity,
-            visible:    layer.visible,
-            clip_mask:  null,
-            transform:  DEFAULT_TRANSFORM(),
-            meshOpts:   null,
-            mesh:       null,
-          });
-        });
-
-        ver.textureVersion++;
-      });
+      if (detectCharacterFormat(layers)) {
+        pendingPsdRef.current = { psdW, psdH, layers, partIds };
+        setPsdOrgModal(true);
+      } else {
+        finalizePsdImport(psdW, psdH, layers, partIds, false);
+      }
     });
-  }, [updateProject, dispatchMeshWorker]);
+  }, [finalizePsdImport]);
 
   /* ── Drag-and-drop ───────────────────────────────────────────────────── */
   const onDrop = useCallback((e) => {
@@ -528,6 +580,46 @@ export default function CanvasViewport({ remeshRef }) {
           </span>
         </div>
       )}
+
+      {/* PSD auto-organize modal */}
+      {psdOrgModal && (() => {
+        const { psdW, psdH, layers, partIds } = pendingPsdRef.current;
+        const matchCount = layers.filter(l => matchTag(l.name) !== null).length;
+        const dismiss = (organize) => {
+          setPsdOrgModal(false);
+          pendingPsdRef.current = null;
+          finalizePsdImport(psdW, psdH, layers, partIds, organize);
+        };
+        return (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60">
+            <div className="bg-popover border border-border rounded-lg shadow-2xl p-6 max-w-sm w-full mx-4 flex flex-col gap-4">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground mb-1">Auto-organize layers?</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  {matchCount} of {layers.length} layers match character part names
+                  (face, back hair, topwear…). Organize into{' '}
+                  <span className="text-foreground font-medium">Head / Body / Extras</span> groups
+                  with correct render order?
+                </p>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button
+                  className="px-3 py-1.5 text-xs rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  onClick={() => dismiss(false)}
+                >
+                  Import as-is
+                </button>
+                <button
+                  className="px-3 py-1.5 text-xs rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium"
+                  onClick={() => dismiss(true)}
+                >
+                  Organize
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

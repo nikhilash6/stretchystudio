@@ -16,7 +16,7 @@
 import React, { useRef, useEffect } from 'react';
 import { useEditorStore } from '@/store/editorStore';
 import { useProjectStore } from '@/store/projectStore';
-import { computeWorldMatrices, mat3Identity } from '@/renderer/transforms';
+import { computeWorldMatrices, mat3Identity, mat3Inverse } from '@/renderer/transforms';
 
 const MOVE_RADIUS   = 8;
 const ROT_RADIUS    = 6;
@@ -55,17 +55,68 @@ export function GizmoOverlay() {
   const pivX   = t.pivotX ?? 0;
   const pivY   = t.pivotY ?? 0;
 
-  // Pivot position in world space
+  // Pivot position in world/screen space
   const worldPivX = wm[0] * pivX + wm[3] * pivY + wm[6];
   const worldPivY = wm[1] * pivX + wm[4] * pivY + wm[7];
+  const pivotScreenX = worldPivX * zoom + panX;
+  const pivotScreenY = worldPivY * zoom + panY;
 
-  // World → canvas-element screen space
-  const screenX = worldPivX * zoom + panX;
-  const screenY = worldPivY * zoom + panY;
+  // Compute local bounding box
+  const iswm = mat3Inverse(wm);
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
-  // Rotation handle: 52px above the pivot in screen space
-  const rotHandleX = screenX;
-  const rotHandleY = screenY - ROT_OFFSET_PX;
+  function pushPoint(wx, wy) {
+     const lx = iswm[0] * wx + iswm[3] * wy + iswm[6];
+     const ly = iswm[1] * wx + iswm[4] * wy + iswm[7];
+     if (lx < minX) minX = lx;
+     if (lx > maxX) maxX = lx;
+     if (ly < minY) minY = ly;
+     if (ly > maxY) maxY = ly;
+  }
+
+  function traverse(node) {
+    if (node.type === 'part' && node.mesh?.vertices) {
+      const nwm = worldMap.get(node.id) ?? mat3Identity();
+      for (const v of node.mesh.vertices) {
+         const wx = nwm[0] * v.x + nwm[3] * v.y + nwm[6];
+         const wy = nwm[1] * v.x + nwm[4] * v.y + nwm[7];
+         pushPoint(wx, wy);
+      }
+    }
+    const children = nodes.filter(c => c.parent === node.id);
+    for (const c of children) traverse(c);
+  }
+  traverse(selectedNode);
+
+  if (minX === Infinity) {
+    minX = -50; maxX = 50; minY = -50; maxY = 50;
+  }
+
+  function toScreen(lx, ly) {
+    const wx = wm[0] * lx + wm[3] * ly + wm[6];
+    const wy = wm[1] * lx + wm[4] * ly + wm[7];
+    return [wx * zoom + panX, wy * zoom + panY];
+  }
+
+  const [pt0X, pt0Y] = toScreen(minX, minY);
+  const [pt1X, pt1Y] = toScreen(maxX, minY);
+  const [pt2X, pt2Y] = toScreen(maxX, maxY);
+  const [pt3X, pt3Y] = toScreen(minX, maxY);
+  const bboxPoints = `${pt0X},${pt0Y} ${pt1X},${pt1Y} ${pt2X},${pt2Y} ${pt3X},${pt3Y}`;
+
+  const localCx = (minX + maxX) / 2;
+  const localCy = (minY + maxY) / 2;
+  const [tcScreenX, tcScreenY] = toScreen(localCx, minY);
+  const [ccScreenX, ccScreenY] = toScreen(localCx, localCy);
+
+  // Rotation handle: rotated "up" vector in screen space
+  const upX = -wm[3] * zoom;
+  const upY = -wm[4] * zoom;
+  const len = Math.sqrt(upX*upX + upY*upY) || 1;
+  const dirX = upX / len;
+  const dirY = upY / len;
+  const rotHandleX = tcScreenX + dirX * ROT_OFFSET_PX;
+  const rotHandleY = tcScreenY + dirY * ROT_OFFSET_PX;
 
   // ── Pointer event handlers ──────────────────────────────────────────────
 
@@ -86,16 +137,58 @@ export function GizmoOverlay() {
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
     const svgRect = svgRef.current.getBoundingClientRect();
-    const dx = e.clientX - (svgRect.left + screenX);
-    const dy = e.clientY - (svgRect.top  + screenY);
+    const px = svgRect.left + pivotScreenX;
+    const py = svgRect.top  + pivotScreenY;
+    const dx = e.clientX - px;
+    const dy = e.clientY - py;
+    
     dragRef.current = {
       type:          'rotate',
       nodeId:        selectedNode.id,
       startAngle:    Math.atan2(dy, dx),
       startRotation: t.rotation ?? 0,
-      pivotScreenX:  screenX,
-      pivotScreenY:  screenY,
+      pivotScreenX:  pivotScreenX,
+      pivotScreenY:  pivotScreenY,
     };
+  }
+
+  function startPivotDrag(e) {
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = {
+      type:         'pivot',
+      nodeId:       selectedNode.id,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startPivotX:  t.pivotX ?? 0,
+      startPivotY:  t.pivotY ?? 0,
+      startX:       t.x ?? 0,
+      startY:       t.y ?? 0,
+      iswm:         mat3Inverse(wm), // current inverse world matrix
+    };
+  }
+
+  function centerPivot() {
+    if (minX === Infinity) return;
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const dLx = cx - (t.pivotX ?? 0);
+    const dLy = cy - (t.pivotY ?? 0);
+    
+    updateProject((proj) => {
+      const node = proj.nodes.find(n => n.id === selectedNode.id);
+      if (!node?.transform) return;
+      const t = node.transform;
+      const θ = (t.rotation ?? 0) * (Math.PI / 180);
+      const c = Math.cos(θ), s = Math.sin(θ);
+      const sX = t.scaleX ?? 1, sY = t.scaleY ?? 1;
+
+      // Adjust x,y to counter-act the pivot move
+      t.x += dLx * (sX * c - 1) - dLy * (sY * s);
+      t.y += dLx * (sX * s) + dLy * (sY * c - 1);
+      t.pivotX = cx;
+      t.pivotY = cy;
+    });
   }
 
   function onDragMove(e) {
@@ -121,12 +214,44 @@ export function GizmoOverlay() {
       const dx = e.clientX - (svgRect.left + drag.pivotScreenX);
       const dy = e.clientY - (svgRect.top  + drag.pivotScreenY);
       const currentAngle = Math.atan2(dy, dx);
-      const delta = (currentAngle - drag.startAngle) * (180 / Math.PI);
+      let delta = (currentAngle - drag.startAngle) * (180 / Math.PI);
+      
+      // Shift modifier for 15 degree snapping
+      if (e.shiftKey) delta = Math.round(delta / 15) * 15;
+
       updateProject((proj) => {
         const node = proj.nodes.find(n => n.id === drag.nodeId);
         if (!node) return;
         if (!node.transform) node.transform = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1, pivotX: 0, pivotY: 0 };
         node.transform.rotation = drag.startRotation + delta;
+      });
+      return;
+    }
+
+    if (drag.type === 'pivot') {
+      const { zoom: z } = viewRef.current;
+      const dx = (e.clientX - drag.startClientX) / z;
+      const dy = (e.clientY - drag.startClientY) / z;
+      
+      // Convert world delta to local delta using inverse matrix
+      const { iswm } = drag;
+      const dLx = iswm[0] * dx + iswm[3] * dy;
+      const dLy = iswm[1] * dx + iswm[4] * dy;
+
+      updateProject((proj) => {
+        const node = proj.nodes.find(n => n.id === drag.nodeId);
+        if (!node?.transform) return;
+        const t = node.transform;
+        const θ = (t.rotation ?? 0) * (Math.PI / 180);
+        const c = Math.cos(θ), s = Math.sin(θ);
+        const sX = t.scaleX ?? 1, sY = t.scaleY ?? 1;
+
+        t.pivotX = drag.startPivotX + dLx;
+        t.pivotY = drag.startPivotY + dLy;
+        // x' = x - (Tx(newPivot) - Tx(oldPivot))
+        // This keeps world position stable while moving pivot
+        t.x = drag.startX + dLx * (sX * c - 1) - dLy * (sY * s);
+        t.y = drag.startY + dLx * (sX * s) + dLy * (sY * c - 1);
       });
     }
   }
@@ -144,9 +269,33 @@ export function GizmoOverlay() {
       className="absolute inset-0 w-full h-full overflow-visible"
       style={{ pointerEvents: 'none' }}
     >
-      {/* Dashed line from pivot to rotation handle */}
+      {/* Bounding box polygon */}
+      <polygon
+        points={bboxPoints}
+        fill="none"
+        stroke="rgba(80,160,255,0.6)"
+        strokeWidth="1.5"
+        strokeDasharray="4 4"
+      />
+
+      {/* Pivot handle (crosshair) */}
+      <g 
+        style={{ pointerEvents: 'auto', cursor: 'move' }}
+        onPointerDown={startPivotDrag}
+        onPointerMove={onDragMove}
+        onPointerUp={onDragEnd}
+      >
+        <circle cx={pivotScreenX} cy={pivotScreenY} r={12} fill="transparent" />
+        <g stroke="#ff4444" strokeWidth="2">
+          <line x1={pivotScreenX - 6} y1={pivotScreenY} x2={pivotScreenX + 6} y2={pivotScreenY} />
+          <line x1={pivotScreenX} y1={pivotScreenY - 6} x2={pivotScreenX} y2={pivotScreenY + 6} />
+        </g>
+        <circle cx={pivotScreenX} cy={pivotScreenY} r={2} fill="#ff4444" stroke="white" strokeWidth="0.5" />
+      </g>
+
+      {/* Dashed line from top center to rotation handle */}
       <line
-        x1={screenX} y1={screenY}
+        x1={tcScreenX} y1={tcScreenY}
         x2={rotHandleX} y2={rotHandleY}
         stroke="rgba(255,200,80,0.5)"
         strokeWidth="1"
@@ -161,16 +310,16 @@ export function GizmoOverlay() {
         fill="rgba(255,180,60,0.9)"
         stroke="rgba(255,255,255,0.7)"
         strokeWidth="1"
-        style={{ pointerEvents: 'auto', cursor: 'crosshair' }}
+        style={{ pointerEvents: 'auto', cursor: 'alias' }}
         onPointerDown={startRotateDrag}
         onPointerMove={onDragMove}
         onPointerUp={onDragEnd}
       />
 
-      {/* Move handle (blue circle at pivot) */}
+      {/* Move handle (blue circle at bounding box center) */}
       <circle
-        cx={screenX}
-        cy={screenY}
+        cx={ccScreenX}
+        cy={ccScreenY}
         r={MOVE_RADIUS}
         fill="rgba(80,160,255,0.85)"
         stroke="rgba(255,255,255,0.8)"
@@ -179,18 +328,19 @@ export function GizmoOverlay() {
         onPointerDown={startMoveDrag}
         onPointerMove={onDragMove}
         onPointerUp={onDragEnd}
+        onDoubleClick={centerPivot}
       />
 
       {/* Crosshair inside move handle */}
       <line
-        x1={screenX - 4} y1={screenY}
-        x2={screenX + 4} y2={screenY}
+        x1={ccScreenX - 4} y1={ccScreenY}
+        x2={ccScreenX + 4} y2={ccScreenY}
         stroke="white" strokeWidth="1.5"
         style={{ pointerEvents: 'none' }}
       />
       <line
-        x1={screenX} y1={screenY - 4}
-        x2={screenX} y2={screenY + 4}
+        x1={ccScreenX} y1={ccScreenY - 4}
+        x2={ccScreenX} y2={ccScreenY + 4}
         stroke="white" strokeWidth="1.5"
         style={{ pointerEvents: 'none' }}
       />
