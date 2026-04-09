@@ -11,6 +11,7 @@
 import { createProgram } from './program.js';
 import { MESH_VERT, MESH_FRAG, WIRE_VERT, WIRE_FRAG } from './shaders/mesh.js';
 import { PartRenderer } from './partRenderer.js';
+import { BackgroundRenderer } from './backgroundRenderer.js';
 import { computeWorldMatrices, mat3Mul } from './transforms.js';
 
 /**
@@ -51,6 +52,7 @@ export class ScenePass {
     this.wireProgram  = wireProg.program;
     this.wireUniforms = wireProg.uniforms;
 
+    this.bgRenderer   = new BackgroundRenderer(gl);
     this.partRenderer = new PartRenderer(gl, this.meshProgram, this.wireProgram);
 
     this.gl.enable(gl.BLEND);
@@ -62,8 +64,9 @@ export class ScenePass {
    *
    * @param {Object} project  - projectStore.project
    * @param {Object} editor   - editorStore state
+   * @param {boolean} isDark  - whether current theme is dark
    */
-  draw(project, editor) {
+  draw(project, editor, isDark = true) {
     const { gl } = this;
     const { canvas } = gl;
 
@@ -74,12 +77,12 @@ export class ScenePass {
     }
 
     gl.viewport(0, 0, canvas.width, canvas.height);
-    gl.clearColor(0.12, 0.12, 0.12, 1.0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
+    
+    const { zoom, panX, panY } = editor.view;
+    this.bgRenderer.draw(zoom, panX, panY, canvas.width, canvas.height, isDark);
 
     if (!project || project.nodes.length === 0) return;
 
-    const { zoom, panX, panY } = editor.view;
     const camera = buildCameraMatrix(canvas.width, canvas.height, zoom, panX, panY);
 
     const overlays    = editor.overlays   ?? {};
@@ -157,6 +160,7 @@ export class ScenePass {
   destroy() {
     this.partRenderer.destroyAll();
     const { gl } = this;
+    this.bgRenderer.destroy();
     gl.deleteProgram(this.meshProgram);
     gl.deleteProgram(this.wireProgram);
   }

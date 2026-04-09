@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
-import { lightThemePresets, darkThemePresets } from '@/lib/themePresets';
+import { lightThemePresets, darkThemePresets, defaultDarkPreset, defaultLightPreset } from '@/lib/themePresets';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const ThemeContext = createContext();
@@ -20,8 +20,8 @@ const DEFAULT_FONT_SIZE = 16;
 
 export const ThemeProvider = ({ children }) => {
   const [themeMode, setThemeMode] = useState('system'); // 'light', 'dark', or 'system'
-  const [lightTheme, setLightTheme] = useState(lightThemePresets[0]);
-  const [darkTheme, setDarkTheme] = useState(darkThemePresets[0]);
+  const [lightTheme, setLightTheme] = useState(defaultLightPreset);
+  const [darkTheme, setDarkTheme] = useState(defaultDarkPreset);
   const [fontFamily, setFontFamilyState] = useState(DEFAULT_FONT_FAMILY);
   const [fontSize, setFontSize] = useState(DEFAULT_FONT_SIZE);
   const [osTheme, setOsTheme] = useState('light');
@@ -29,7 +29,7 @@ export const ThemeProvider = ({ children }) => {
   const [themeModalConfig, setThemeModalConfig] = useState({
     title: '',
     themes: [],
-    onSelect: () => {},
+    onSelect: () => { },
   });
 
 
@@ -44,12 +44,12 @@ export const ThemeProvider = ({ children }) => {
     if (savedThemeMode) setThemeMode(JSON.parse(savedThemeMode));
     if (savedFontFamily) setFontFamilyState(JSON.parse(savedFontFamily));
     if (savedFontSize) setFontSize(JSON.parse(savedFontSize));
-    
+
     if (savedLightThemeName) {
       const foundTheme = lightThemePresets.find(p => p.name === savedLightThemeName);
       if (foundTheme) setLightTheme(foundTheme);
     }
-    
+
     if (savedDarkThemeName) {
       const foundTheme = darkThemePresets.find(p => p.name === savedDarkThemeName);
       if (foundTheme) setDarkTheme(foundTheme);

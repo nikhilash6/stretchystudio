@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useEditorStore } from '@/store/editorStore';
+import { useTheme } from '@/contexts/ThemeProvider';
 import { useProjectStore, DEFAULT_TRANSFORM } from '@/store/projectStore';
 import { ScenePass } from '@/renderer/scenePass';
 import { importPsd } from '@/io/psd';
@@ -95,12 +96,17 @@ export default function CanvasViewport({ remeshRef }) {
   const updateProject  = useProjectStore(s => s.updateProject);
   const editorState    = useEditorStore();
   const { setSelection, setView } = editorState;
+  const { themeMode, osTheme } = useTheme();
 
   // Stable refs for imperative callbacks
   const editorRef  = useRef(editorState);
   const projectRef = useRef(project);
+  const isDark = themeMode === 'system' ? osTheme === 'dark' : themeMode === 'dark';
+  const isDarkRef = useRef(isDark);
+
   useEffect(() => { editorRef.current = editorState; }, [editorState]);
   useEffect(() => { projectRef.current = project; isDirtyRef.current = true; }, [project]);
+  useEffect(() => { isDarkRef.current = isDark; isDirtyRef.current = true; }, [isDark]);
 
   /* ── WebGL init ──────────────────────────────────────────────────────── */
   useEffect(() => {
@@ -119,7 +125,7 @@ export default function CanvasViewport({ remeshRef }) {
 
     const tick = () => {
       if (isDirtyRef.current && sceneRef.current) {
-        sceneRef.current.draw(projectRef.current, editorRef.current);
+        sceneRef.current.draw(projectRef.current, editorRef.current, isDarkRef.current);
         isDirtyRef.current = false;
       }
       rafRef.current = requestAnimationFrame(tick);
@@ -366,6 +372,8 @@ export default function CanvasViewport({ remeshRef }) {
 
   const onDragOver = useCallback((e) => { e.preventDefault(); }, []);
 
+  const onContextMenu = useCallback((e) => { e.preventDefault(); }, []);
+
   /* ── Wheel: zoom ─────────────────────────────────────────────────────── */
   const onWheel = useCallback((e) => {
     e.preventDefault();
@@ -389,8 +397,12 @@ export default function CanvasViewport({ remeshRef }) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     canvas.addEventListener('wheel', onWheel, { passive: false });
-    return () => canvas.removeEventListener('wheel', onWheel);
-  }, [onWheel]);
+    canvas.addEventListener('contextmenu', onContextMenu);
+    return () => {
+      canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('contextmenu', onContextMenu);
+    };
+  }, [onWheel, onContextMenu]);
 
   /* ── Pointer events ──────────────────────────────────────────────────── */
   const onPointerDown = useCallback((e) => {
@@ -398,11 +410,30 @@ export default function CanvasViewport({ remeshRef }) {
     const editor = editorRef.current;
     const { view, toolMode } = editor;
 
-    // Middle mouse or alt+left → pan
-    if (e.button === 1 || (e.button === 0 && e.altKey)) {
-      panRef.current = { startX: e.clientX, startY: e.clientY, panX0: view.panX, panY0: view.panY };
+    // Middle mouse (1) or right mouse (2) or alt+left → pan / zoom
+    if (e.button === 1 || e.button === 2 || (e.button === 0 && e.altKey)) {
+      if (e.ctrlKey) {
+        // Ctrl + Middle/Right drag → Zoom
+        panRef.current = { 
+          mode: 'zoom',
+          startX: e.clientX, 
+          startY: e.clientY, 
+          zoom0: view.zoom,
+          panX0: view.panX,
+          panY0: view.panY 
+        };
+      } else {
+        // Regular Middle/Right drag → Pan
+        panRef.current = { 
+          mode: 'pan',
+          startX: e.clientX, 
+          startY: e.clientY, 
+          panX0: view.panX, 
+          panY0: view.panY 
+        };
+      }
       canvas.setPointerCapture(e.pointerId);
-      canvas.style.cursor = 'grabbing';
+      canvas.style.cursor = e.ctrlKey ? 'zoom-in' : 'grabbing';
       return;
     }
 
@@ -508,11 +539,27 @@ export default function CanvasViewport({ remeshRef }) {
     const canvas = canvasRef.current;
     const { view } = editorRef.current;
 
-    // Pan
+    // Pan or Zoom
     if (panRef.current) {
       const dx = e.clientX - panRef.current.startX;
       const dy = e.clientY - panRef.current.startY;
-      setView({ panX: panRef.current.panX0 + dx, panY: panRef.current.panY0 + dy });
+      
+      if (panRef.current.mode === 'zoom') {
+        const { zoom0, panX0, panY0, startX, startY } = panRef.current;
+        // Dragging up = zoom in, dragging down = zoom out
+        const factor = Math.exp(-dy * 0.01); 
+        const newZoom = Math.max(0.05, Math.min(20, zoom0 * factor));
+        
+        // Zoom relative to the point where the drag started
+        const mx = startX - canvas.getBoundingClientRect().left;
+        const my = startY - canvas.getBoundingClientRect().top;
+        const newPanX = mx - (mx - panX0) * (newZoom / zoom0);
+        const newPanY = my - (my - panY0) * (newZoom / zoom0);
+        
+        setView({ zoom: newZoom, panX: newPanX, panY: newPanY });
+      } else {
+        setView({ panX: panRef.current.panX0 + dx, panY: panRef.current.panY0 + dy });
+      }
       isDirtyRef.current = true;
       return;
     }
@@ -556,12 +603,12 @@ export default function CanvasViewport({ remeshRef }) {
 
     if (panRef.current) {
       panRef.current = null;
-      canvas.style.cursor = 'crosshair';
+      canvas.style.cursor = '';
       return;
     }
     if (dragRef.current) {
       dragRef.current = null;
-      canvas.style.cursor = 'crosshair';
+      canvas.style.cursor = '';
     }
   }, []);
 
