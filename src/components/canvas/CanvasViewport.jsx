@@ -7,6 +7,7 @@ import { importPsd } from '@/io/psd';
 import { detectCharacterFormat, organizeCharacterLayers, matchTag } from '@/io/psdOrganizer';
 import { computeWorldMatrices, mat3Inverse, mat3Identity } from '@/renderer/transforms';
 import { GizmoOverlay } from '@/components/canvas/GizmoOverlay';
+import { retriangulate } from '@/mesh/generate';
 
 /* ──────────────────────────────────────────────────────────────────────────
    Helpers
@@ -132,9 +133,12 @@ export default function CanvasViewport({ remeshRef, deleteMeshRef }) {
   const isDark = themeMode === 'system' ? osTheme === 'dark' : themeMode === 'dark';
   const isDarkRef = useRef(isDark);
 
-  useEffect(() => { editorRef.current = editorState; }, [editorState]);
-  useEffect(() => { projectRef.current = project; isDirtyRef.current = true; }, [project]);
-  useEffect(() => { isDarkRef.current = isDark; isDirtyRef.current = true; }, [isDark]);
+  // Update refs synchronously in render to ensure event handlers see latest state
+  editorRef.current = editorState;
+  projectRef.current = project;
+  isDarkRef.current = isDark;
+
+  useEffect(() => { isDirtyRef.current = true; }, [project, isDark]);
 
   /* ── WebGL init ──────────────────────────────────────────────────────── */
   useEffect(() => {
@@ -246,13 +250,6 @@ export default function CanvasViewport({ remeshRef, deleteMeshRef }) {
   const deleteMeshForPart = useCallback((partId) => {
     const node = projectRef.current.nodes.find(n => n.id === partId);
     if (!node) return;
-
-    // Reset GPU to quad fallback
-    const scene = sceneRef.current;
-    if (scene && node.imageWidth && node.imageHeight) {
-      scene.parts.uploadQuadFallback(partId, node.imageWidth, node.imageHeight);
-      isDirtyRef.current = true;
-    }
 
     // Clear mesh from project store
     updateProject((p) => {
@@ -472,7 +469,8 @@ export default function CanvasViewport({ remeshRef, deleteMeshRef }) {
   /* ── Pointer events ──────────────────────────────────────────────────── */
   const onPointerDown = useCallback((e) => {
     const canvas = canvasRef.current;
-    const editor = editorRef.current;
+    // Read directly from store to always get latest values (avoids stale closure)
+    const editor = useEditorStore.getState();
     const { view, toolMode } = editor;
 
     // Middle mouse (1) or right mouse (2) or alt+left → pan / zoom
@@ -528,16 +526,35 @@ export default function CanvasViewport({ remeshRef, deleteMeshRef }) {
       const iwm = mat3Inverse(wm);
       const [lx, ly] = worldToLocal(worldX, worldY, iwm);
 
+      // Add vertex to project
+      const w = proj.canvas.width || 1;
+      const h = proj.canvas.height || 1;
       updateProject((p) => {
         const n = p.nodes.find(x => x.id === partId);
         if (!n?.mesh) return;
         const newVert = { x: lx, y: ly, restX: lx, restY: ly };
         n.mesh.vertices.push(newVert);
-        const w = p.canvas.width || 1;
-        const h = p.canvas.height || 1;
         n.mesh.uvs.push(lx / w, ly / h);
+
+        // Re-triangulate to connect the new vertex
+        const result = retriangulate(n.mesh.vertices, new Float32Array(n.mesh.uvs), n.mesh.edgeIndices);
+        n.mesh.triangles = result.triangles;
       });
-      isDirtyRef.current = true;
+
+      const scene = sceneRef.current;
+      if (scene) {
+        const updated = projectRef.current.nodes.find(n => n.id === partId);
+        if (updated?.mesh) {
+          scene.parts.uploadMesh(partId, {
+            vertices: updated.mesh.vertices,
+            uvs: new Float32Array(updated.mesh.uvs),
+            triangles: updated.mesh.triangles,
+            edgeIndices: updated.mesh.edgeIndices,
+          });
+          isDirtyRef.current = true;
+        }
+      }
+
       return;
     }
 
@@ -550,16 +567,39 @@ export default function CanvasViewport({ remeshRef, deleteMeshRef }) {
         const [lx, ly] = worldToLocal(worldX, worldY, iwm);
         const idx = findNearestVertex(node.mesh.vertices, lx, ly, 14 / view.zoom);
         if (idx >= 0) {
+          // Remove the vertex and adjust edge indices
+          const newEdgeIndices = new Set(
+            Array.from(node.mesh.edgeIndices || [])
+              .filter(e => e !== idx)
+              .map(e => e > idx ? e - 1 : e)
+          );
+
           updateProject((p) => {
             const n = p.nodes.find(x => x.id === node.id);
             if (!n?.mesh) return;
             n.mesh.vertices.splice(idx, 1);
             n.mesh.uvs.splice(idx * 2, 2);
-            n.mesh.triangles = n.mesh.triangles
-              .filter(t => !t.includes(idx))
-              .map(t => t.map(v => v > idx ? v - 1 : v));
+            n.mesh.edgeIndices = newEdgeIndices;
+
+            // Re-triangulate to heal the hole
+            const result = retriangulate(n.mesh.vertices, new Float32Array(n.mesh.uvs), newEdgeIndices);
+            n.mesh.triangles = result.triangles;
           });
-          isDirtyRef.current = true;
+
+          const scene = sceneRef.current;
+          if (scene) {
+            const updated = projectRef.current.nodes.find(n => n.id === node.id);
+            if (updated?.mesh) {
+              scene.parts.uploadMesh(node.id, {
+                vertices: updated.mesh.vertices,
+                uvs: new Float32Array(updated.mesh.uvs),
+                triangles: updated.mesh.triangles,
+                edgeIndices: updated.mesh.edgeIndices,
+              });
+              isDirtyRef.current = true;
+            }
+          }
+
           return;
         }
       }

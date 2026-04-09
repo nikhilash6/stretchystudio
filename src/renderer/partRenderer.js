@@ -220,7 +220,8 @@ export class PartRenderer {
   drawWireframe(partId, mvp, uMvp, uColor) {
     const { gl } = this;
     const state = this._parts.get(partId);
-    if (!state || !state.vao || state.indexCount === 0) return;
+    // Skip wireframe for fallback quads (no edge indices = no real mesh)
+    if (!state || !state.vao || state.indexCount === 0 || state.edgeIndexCount === 0) return;
 
     gl.uniformMatrix3fv(uMvp, false, mvp);
     gl.uniform4f(uColor, 0.2, 0.9, 0.5, 0.6); // translucent green

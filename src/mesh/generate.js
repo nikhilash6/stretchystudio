@@ -11,6 +11,31 @@ import { sampleInterior, filterByEdgePadding } from './sample.js';
 import { triangulate } from './delaunay.js';
 
 /**
+ * Re-triangulate existing vertices without changing them.
+ * Useful after adding/removing vertices — preserves positions and UVs,
+ * only regenerates triangle connectivity.
+ *
+ * @param {Array<{x:number,y:number,restX:number,restY:number}>} vertices
+ * @param {Float32Array} uvs
+ * @param {Set<number>} edgeIndices - which vertices are on the boundary (preserved)
+ * @returns {MeshResult}
+ */
+export function retriangulate(vertices, uvs, edgeIndices) {
+  if (vertices.length < 3) {
+    return { vertices, uvs, triangles: [], edgeIndices };
+  }
+
+  // Extract [x, y] points from existing vertices
+  const points = vertices.map(v => [v.x, v.y]);
+
+  // Triangulate
+  const triangles = triangulate(points);
+
+  // Preserve edgeIndices as-is
+  return { vertices, uvs, triangles, edgeIndices };
+}
+
+/**
  * @typedef {Object} MeshResult
  * @property {Array<{x:number,y:number,restX:number,restY:number}>} vertices
  * @property {Float32Array}                                           uvs        - flat [u0,v0, u1,v1, …] in [0,1]

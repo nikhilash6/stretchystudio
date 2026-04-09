@@ -3,10 +3,9 @@
  *
  * Sections:
  *  1. Overlay toggles: showImage, showWireframe, showVertices, showEdgeOutline
- *  2. Tool mode buttons: select / add_vertex / remove_vertex
- *  3. Selected-node details: name, opacity, visibility (part or group)
- *  4. Transform panel: x, y, rotation, scale, pivot (part or group)
- *  5. Mesh settings: sliders + Remesh button (part only)
+ *  2. Selected-node details: name, opacity, visibility (part or group)
+ *  3. Transform panel: x, y, rotation, scale, pivot (part or group)
+ *  4. Mesh settings: +V/-V buttons (only if mesh exists), collapsible sliders, Remesh button (part only)
  */
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useEditorStore } from '@/store/editorStore';
@@ -22,6 +21,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 
 /* ── Small helpers ────────────────────────────────────────────────────────── */
 
@@ -49,7 +55,7 @@ function HelpIcon({ tip }) {
         <TooltipTrigger asChild>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1"
             className="text-muted-foreground/40 hover:text-muted-foreground/60 cursor-help flex-shrink-0">
-            <circle cx="6" cy="6" r="5.5"/>
+            <circle cx="6" cy="6" r="5.5" />
             <text x="6" y="8" fontSize="8" textAnchor="middle" fill="currentColor" fontWeight="bold">?</text>
           </svg>
         </TooltipTrigger>
@@ -120,7 +126,7 @@ function NumericInput({ value, onChange, step = 1, precision = 1, className = ''
 /* ── Overlay toggles ──────────────────────────────────────────────────────── */
 
 function OverlayToggles() {
-  const overlays    = useEditorStore(s => s.overlays);
+  const overlays = useEditorStore(s => s.overlays);
   const setOverlays = useEditorStore(s => s.setOverlays);
 
   const toggle = (key) => setOverlays({ [key]: !overlays[key] });
@@ -129,9 +135,9 @@ function OverlayToggles() {
     <div className="space-y-1">
       <SectionTitle>Overlays</SectionTitle>
       {[
-        ['showImage',       'Image'],
-        ['showWireframe',   'Wireframe'],
-        ['showVertices',    'Vertices'],
+        ['showImage', 'Image'],
+        ['showWireframe', 'Wireframe'],
+        ['showVertices', 'Vertices'],
         ['showEdgeOutline', 'Edge Outline'],
       ].map(([key, label]) => (
         <Row key={key} label={label}>
@@ -142,38 +148,6 @@ function OverlayToggles() {
           />
         </Row>
       ))}
-    </div>
-  );
-}
-
-/* ── Tool mode ────────────────────────────────────────────────────────────── */
-
-function ToolModeButtons() {
-  const toolMode    = useEditorStore(s => s.toolMode);
-  const setToolMode = useEditorStore(s => s.setToolMode);
-
-  const tools = [
-    { mode: 'select',        label: 'Select' },
-    { mode: 'add_vertex',    label: '+ Vertex' },
-    { mode: 'remove_vertex', label: '− Vertex' },
-  ];
-
-  return (
-    <div className="space-y-1">
-      <SectionTitle>Tool</SectionTitle>
-      <div className="flex gap-1">
-        {tools.map(({ mode, label }) => (
-          <Button
-            key={mode}
-            size="sm"
-            variant={toolMode === mode ? 'default' : 'outline'}
-            className="flex-1 text-xs h-7 px-1"
-            onClick={() => setToolMode(mode)}
-          >
-            {label}
-          </Button>
-        ))}
-      </div>
     </div>
   );
 }
@@ -321,9 +295,18 @@ function TransformPanel({ node }) {
 /* ── Mesh settings ────────────────────────────────────────────────────────── */
 
 function MeshPanel({ node, onRemesh, onDeleteMesh }) {
-  const meshDefaults    = useEditorStore(s => s.meshDefaults);
+  const [expanded, setExpanded] = React.useState(false);
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const meshDefaults = useEditorStore(s => s.meshDefaults);
   const setMeshDefaults = useEditorStore(s => s.setMeshDefaults);
-  const updateProject   = useProjectStore(s => s.updateProject);
+  const toolMode = useEditorStore(s => s.toolMode);
+  const setToolMode = useEditorStore(s => s.setToolMode);
+  const updateProject = useProjectStore(s => s.updateProject);
+
+  const handleDeleteMesh = () => {
+    onDeleteMesh(node.id);
+    setConfirmDelete(false);
+  };
 
   const opts = node.meshOpts ?? meshDefaults;
 
@@ -345,26 +328,65 @@ function MeshPanel({ node, onRemesh, onDeleteMesh }) {
     });
   }, [node.id, meshDefaults, updateProject]);
 
+  // Reset tool mode when node changes or mesh is deleted
+  useEffect(() => {
+    if (toolMode !== 'select') {
+      setToolMode('select');
+    }
+  }, [node.id, node.mesh, setToolMode]);
+
+  const toggleVertexTool = (mode) => {
+    setToolMode(toolMode === mode ? 'select' : mode);
+  };
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <SectionTitle>Mesh</SectionTitle>
-        {node.mesh && (
-          <button
-            onClick={() => onDeleteMesh(node.id)}
-            className="text-[10px] text-destructive/70 hover:text-destructive underline-offset-2 hover:underline"
-          >
-            delete
-          </button>
-        )}
-        {!node.mesh && !node.meshOpts && (
-          <button
-            onClick={enablePerPart}
-            className="text-[10px] text-primary underline-offset-2 hover:underline"
-          >
-            override
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {node.mesh && (
+            <>
+              <button
+                onClick={() => toggleVertexTool('add_vertex')}
+                className={`text-[10px] px-2 py-1 rounded border ${toolMode === 'add_vertex'
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'border-border hover:border-foreground/20'
+                  }`}
+                title="Add vertex mode"
+              >
+                + V
+              </button>
+              <button
+                onClick={() => toggleVertexTool('remove_vertex')}
+                className={`text-[10px] px-2 py-1 rounded border ${toolMode === 'remove_vertex'
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'border-border hover:border-foreground/20'
+                  }`}
+                title="Remove vertex mode"
+              >
+                − V
+              </button>
+            </>
+          )}
+          {node.mesh && (
+            <Button
+              size="sm"
+              variant="destructive"
+              className="h-6 px-2 text-[10px]"
+              onClick={() => setConfirmDelete(true)}
+            >
+              Delete Mesh
+            </Button>
+          )}
+          {!node.mesh && !node.meshOpts && (
+            <button
+              onClick={enablePerPart}
+              className="text-[10px] text-primary underline-offset-2 hover:underline"
+            >
+              override
+            </button>
+          )}
+        </div>
       </div>
 
       {!node.mesh && (
@@ -373,41 +395,55 @@ function MeshPanel({ node, onRemesh, onDeleteMesh }) {
         </p>
       )}
 
-      <SliderRow
-        label="Alpha Threshold"
-        value={opts.alphaThreshold}
-        min={1} max={254}
-        onChange={(v) => setOpt('alphaThreshold', v)}
-        help="Pixel opacity threshold (0–255). Higher = stricter boundary detection."
-      />
-      <SliderRow
-        label="Smooth Passes"
-        value={opts.smoothPasses}
-        min={0} max={10}
-        onChange={(v) => setOpt('smoothPasses', v)}
-        help="Laplacian smoothing iterations on the contour. Smooths jagged edges."
-      />
-      <SliderRow
-        label="Grid Spacing"
-        value={opts.gridSpacing}
-        min={6} max={100}
-        onChange={(v) => setOpt('gridSpacing', v)}
-        help="Distance between interior sample points. Lower = more vertices, higher detail."
-      />
-      <SliderRow
-        label="Edge Padding"
-        value={opts.edgePadding}
-        min={0} max={40}
-        onChange={(v) => setOpt('edgePadding', v)}
-        help="Minimum distance interior points must be from the boundary. Prevents clustering."
-      />
-      <SliderRow
-        label="Edge Points"
-        value={opts.numEdgePoints}
-        min={8} max={300}
-        onChange={(v) => setOpt('numEdgePoints', v)}
-        help="Number of points sampled along the contour. More = smoother outline."
-      />
+      {/* Collapsible sliders section */}
+      <div className="space-y-1">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground py-0.5"
+        >
+          <span>{expanded ? '▼' : '▶'}</span>
+          <span className="font-medium">Settings</span>
+        </button>
+        {expanded && (
+          <div className="space-y-2 pl-2 border-l border-border/50">
+            <SliderRow
+              label="Alpha Threshold"
+              value={opts.alphaThreshold}
+              min={1} max={254}
+              onChange={(v) => setOpt('alphaThreshold', v)}
+              help="Pixel opacity threshold (0–255). Higher = stricter boundary detection."
+            />
+            <SliderRow
+              label="Smooth Passes"
+              value={opts.smoothPasses}
+              min={0} max={10}
+              onChange={(v) => setOpt('smoothPasses', v)}
+              help="Laplacian smoothing iterations on the contour. Smooths jagged edges."
+            />
+            <SliderRow
+              label="Grid Spacing"
+              value={opts.gridSpacing}
+              min={6} max={100}
+              onChange={(v) => setOpt('gridSpacing', v)}
+              help="Distance between interior sample points. Lower = more vertices, higher detail."
+            />
+            <SliderRow
+              label="Edge Padding"
+              value={opts.edgePadding}
+              min={0} max={40}
+              onChange={(v) => setOpt('edgePadding', v)}
+              help="Minimum distance interior points must be from the boundary. Prevents clustering."
+            />
+            <SliderRow
+              label="Edge Points"
+              value={opts.numEdgePoints}
+              min={8} max={300}
+              onChange={(v) => setOpt('numEdgePoints', v)}
+              help="Number of points sampled along the contour. More = smoother outline."
+            />
+          </div>
+        )}
+      </div>
 
       <Button
         size="sm"
@@ -416,6 +452,24 @@ function MeshPanel({ node, onRemesh, onDeleteMesh }) {
       >
         {node.mesh ? 'Remesh' : 'Generate Mesh'}
       </Button>
+
+      {/* Delete mesh confirmation dialog */}
+      <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <DialogContent>
+          <DialogTitle>Delete Mesh?</DialogTitle>
+          <DialogDescription>
+            This will permanently delete the mesh for "{node.name || node.id}". This action cannot be undone.
+          </DialogDescription>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteMesh}>
+              Delete Mesh
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -423,8 +477,8 @@ function MeshPanel({ node, onRemesh, onDeleteMesh }) {
 /* ── Root Inspector ───────────────────────────────────────────────────────── */
 
 export function Inspector({ onRemesh, onDeleteMesh }) {
-  const selection  = useEditorStore(s => s.selection);
-  const nodes      = useProjectStore(s => s.project.nodes);
+  const selection = useEditorStore(s => s.selection);
+  const nodes = useProjectStore(s => s.project.nodes);
 
   const selectedNode = nodes.find(n => n.id === selection[0]) ?? null;
 
@@ -432,11 +486,9 @@ export function Inspector({ onRemesh, onDeleteMesh }) {
     <div className="flex flex-col gap-4 p-3 h-full overflow-y-auto">
       <OverlayToggles />
       <Separator />
-      <ToolModeButtons />
 
       {selectedNode ? (
         <>
-          <Separator />
           <NodeDetails node={selectedNode} />
           <Separator />
           <TransformPanel node={selectedNode} />
