@@ -39,6 +39,9 @@ export const useEditorStore = create((set) => ({
   /** Active tab in the Layers panel: 'depth' (draw order) or 'groups' (hierarchy) */
   activeLayerTab: 'depth',
 
+  /** Editor mode: 'staging' = M3 workflow, 'animation' = timeline/keyframing active */
+  editorMode: 'staging',
+
   /** When true, only the selected meshed part is interactable; other layers are dimmed */
   meshEditMode: false,
 
@@ -68,4 +71,5 @@ export const useEditorStore = create((set) => ({
   setOverlays:          (partial)  => set((state) => ({ overlays: { ...state.overlays, ...partial } })),
   setMeshDefaults:      (partial)  => set((state) => ({ meshDefaults: { ...state.meshDefaults, ...partial } })),
   setActiveLayerTab:    (tab)      => set({ activeLayerTab: tab }),
+  setEditorMode:        (mode)     => set({ editorMode: mode }),
 }));

@@ -1,0 +1,108 @@
+/**
+ * Animation engine — keyframe interpolation utilities.
+ *
+ * Animation data model (stored in project.animations):
+ *   { id, name, duration (ms), fps,
+ *     tracks: [{ nodeId, property, keyframes: [{ time (ms), value, easing }] }] }
+ *
+ * Supported properties:
+ *   'x' | 'y' | 'rotation' | 'scaleX' | 'scaleY' | 'hSkew' | 'opacity'
+ */
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function easeInOut(t) {
+  // Cubic ease in-out
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+/**
+ * Interpolate a single track's keyframes at the given time (ms).
+ * Returns undefined if no keyframes.
+ */
+export function interpolateTrack(keyframes, timeMs) {
+  if (!keyframes || keyframes.length === 0) return undefined;
+
+  // Clamp to edge values
+  if (timeMs <= keyframes[0].time) return keyframes[0].value;
+  if (timeMs >= keyframes[keyframes.length - 1].time) return keyframes[keyframes.length - 1].value;
+
+  // Binary search for the surrounding pair
+  let lo = 0;
+  let hi = keyframes.length - 2;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (keyframes[mid + 1].time <= timeMs) lo = mid + 1;
+    else hi = mid;
+  }
+
+  const kA = keyframes[lo];
+  const kB = keyframes[lo + 1];
+  const t  = (timeMs - kA.time) / (kB.time - kA.time);
+  // easing is on the destination keyframe
+  const te = kB.easing === 'ease' ? easeInOut(t) : t;
+
+  return lerp(kA.value, kB.value, te);
+}
+
+/**
+ * Compute pose overrides for all tracks in an animation at the given time.
+ *
+ * @param {Object|null} animation  - single animation object (project.animations[i])
+ * @param {number}      timeMs     - current playhead position in milliseconds
+ * @returns {Map<string, Object>}  nodeId → { x?, y?, rotation?, scaleX?, scaleY?, hSkew?, opacity? }
+ */
+export function computePoseOverrides(animation, timeMs) {
+  const overrides = new Map();
+  if (!animation) return overrides;
+
+  for (const track of animation.tracks) {
+    const value = interpolateTrack(track.keyframes, timeMs);
+    if (value === undefined) continue;
+
+    if (!overrides.has(track.nodeId)) overrides.set(track.nodeId, {});
+    overrides.get(track.nodeId)[track.property] = value;
+  }
+
+  return overrides;
+}
+
+/**
+ * Insert or update a keyframe in a track's keyframe array (mutates in place).
+ * Keeps keyframes sorted by time.
+ */
+export function upsertKeyframe(keyframes, timeMs, value, easing = 'linear') {
+  const existing = keyframes.find(kf => kf.time === timeMs);
+  if (existing) {
+    existing.value  = value;
+    existing.easing = easing;
+  } else {
+    keyframes.push({ time: timeMs, value, easing });
+    keyframes.sort((a, b) => a.time - b.time);
+  }
+}
+
+/** All keyframeable transform properties (in display order) */
+export const KEYFRAME_PROPS = ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'hSkew', 'opacity'];
+
+/** Human-readable labels */
+export const PROP_LABELS = {
+  x:        'X',
+  y:        'Y',
+  rotation: 'Rotation',
+  scaleX:   'Scale X',
+  scaleY:   'Scale Y',
+  hSkew:    'H Skew',
+  opacity:  'Opacity',
+};
+
+/**
+ * Get the current value of a property from a node (used when inserting keyframes).
+ * Reads from transform for transform props, directly from node for opacity.
+ */
+export function getNodePropertyValue(node, property) {
+  if (property === 'opacity') return node.opacity ?? 1;
+  return node.transform?.[property] ?? 0;
+}

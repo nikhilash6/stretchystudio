@@ -62,11 +62,13 @@ export class ScenePass {
   /**
    * Main draw call. Called once per rAF when the scene is dirty.
    *
-   * @param {Object} project  - projectStore.project
-   * @param {Object} editor   - editorStore state
-   * @param {boolean} isDark  - whether current theme is dark
+   * @param {Object}  project       - projectStore.project
+   * @param {Object}  editor        - editorStore state
+   * @param {boolean} isDark        - whether current theme is dark
+   * @param {Map}     poseOverrides - optional Map<nodeId, {x?,y?,rotation?,scaleX?,scaleY?,hSkew?,opacity?}>
+   *                                  from animationStore; applied on top of stored transforms
    */
-  draw(project, editor, isDark = true) {
+  draw(project, editor, isDark = true, poseOverrides = null) {
     const { gl } = this;
     const { canvas } = gl;
 
@@ -89,11 +91,30 @@ export class ScenePass {
     const selectionSet = new Set(editor.selection ?? []);
     const meshEditMode = editor.meshEditMode && selectionSet.size > 0;
 
+    // ── Apply pose overrides (from animation playback) ────────────────────
+    // Build an effective node list with interpolated transforms merged in.
+    // This avoids mutating projectStore state during playback.
+    const effectiveNodes = (poseOverrides && poseOverrides.size > 0)
+      ? project.nodes.map(node => {
+          const ov = poseOverrides.get(node.id);
+          if (!ov) return node;
+          const transformOv = { ...node.transform };
+          for (const k of ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'hSkew']) {
+            if (ov[k] !== undefined) transformOv[k] = ov[k];
+          }
+          return {
+            ...node,
+            transform: transformOv,
+            opacity: ov.opacity !== undefined ? ov.opacity : node.opacity,
+          };
+        })
+      : project.nodes;
+
     // ── Hierarchy pass: compute world matrix for every node ───────────────
-    const worldMatrices = computeWorldMatrices(project.nodes);
+    const worldMatrices = computeWorldMatrices(effectiveNodes);
 
     // Sort parts by draw_order ascending (groups are never rendered directly)
-    const parts = project.nodes
+    const parts = effectiveNodes
       .filter(n => n.type === 'part')
       .sort((a, b) => a.draw_order - b.draw_order);
 

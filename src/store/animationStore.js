@@ -1,0 +1,113 @@
+import { create } from 'zustand';
+
+/**
+ * AnimationStore — playback state, separate from projectStore.
+ * The animation DATA (tracks, keyframes) lives in project.animations.
+ * This store holds the runtime playback state and pose overrides.
+ */
+export const useAnimationStore = create((set, get) => ({
+  /** ID of the currently active animation clip */
+  activeAnimationId: null,
+
+  /** Playhead position in milliseconds */
+  currentTime: 0,
+
+  /** Whether playback is running */
+  isPlaying: false,
+
+  /** Loop playback between startFrame and endFrame */
+  loop: true,
+
+  /** FPS for this clip (also stored on animation object, but mirrored here for transport controls) */
+  fps: 24,
+
+  /** Loop window, in frames */
+  startFrame: 0,
+  endFrame: 48,
+
+  /** Playback speed multiplier (0 = paused, 1 = normal, 2 = double, etc.) */
+  speed: 1.0,
+
+  /** Internal: last rAF timestamp for delta computation */
+  _lastTimestamp: null,
+
+  /** Computed pose overrides: Map<nodeId, {x?, y?, rotation?, scaleX?, scaleY?, hSkew?, opacity?}> */
+  poseOverrides: new Map(),
+
+  // ── Setters ──────────────────────────────────────────────────────────────
+
+  setActiveAnimationId: (id) => set({ activeAnimationId: id }),
+  setFps:        (fps)   => set({ fps: Math.max(1, Math.round(fps)) }),
+  setSpeed:      (speed) => set({ speed: Math.max(0, Math.min(4, speed)) }),
+  setLoop:       (loop)  => set({ loop }),
+
+  setStartFrame: (f) => set((s) => ({
+    startFrame: Math.max(0, Math.round(f)),
+    // Clamp current time if needed
+    currentTime: Math.max((Math.max(0, Math.round(f)) / s.fps) * 1000, s.currentTime),
+  })),
+
+  setEndFrame: (f) => set((s) => ({
+    endFrame: Math.max(s.startFrame + 1, Math.round(f)),
+  })),
+
+  setPoseOverrides: (map) => set({ poseOverrides: map }),
+
+  // ── Transport ─────────────────────────────────────────────────────────────
+
+  play: () => set({ isPlaying: true, _lastTimestamp: null }),
+  pause: () => set({ isPlaying: false, _lastTimestamp: null }),
+
+  stop: () => set((s) => ({
+    isPlaying: false,
+    currentTime: (s.startFrame / s.fps) * 1000,
+    _lastTimestamp: null,
+    poseOverrides: new Map(),
+  })),
+
+  seekFrame: (frame) => set((s) => ({
+    currentTime: (frame / s.fps) * 1000,
+    _lastTimestamp: null,
+  })),
+
+  seekTime: (ms) => set({ currentTime: ms, _lastTimestamp: null }),
+
+  // ── rAF tick ──────────────────────────────────────────────────────────────
+  /**
+   * Called from CanvasViewport's rAF loop with the current timestamp (ms).
+   * Advances currentTime if playing. Returns true if time advanced (scene needs redraw).
+   */
+  tick: (timestamp) => {
+    const s = get();
+    if (!s.isPlaying) return false;
+
+    if (s._lastTimestamp === null) {
+      set({ _lastTimestamp: timestamp });
+      return false;
+    }
+
+    const deltaMs   = (timestamp - s._lastTimestamp) * s.speed;
+    const startMs   = (s.startFrame / s.fps) * 1000;
+    const endMs     = (s.endFrame   / s.fps) * 1000;
+    const rangeMs   = endMs - startMs;
+
+    if (rangeMs <= 0 || deltaMs <= 0) {
+      set({ _lastTimestamp: timestamp });
+      return false;
+    }
+
+    let newTime = s.currentTime + deltaMs;
+
+    if (newTime >= endMs) {
+      if (s.loop) {
+        newTime = startMs + ((newTime - startMs) % rangeMs);
+      } else {
+        set({ isPlaying: false, currentTime: endMs, _lastTimestamp: null });
+        return true;
+      }
+    }
+
+    set({ currentTime: newTime, _lastTimestamp: timestamp });
+    return true;
+  },
+}));

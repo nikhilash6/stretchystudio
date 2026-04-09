@@ -2,6 +2,8 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useEditorStore } from '@/store/editorStore';
 import { useTheme } from '@/contexts/ThemeProvider';
 import { useProjectStore, DEFAULT_TRANSFORM } from '@/store/projectStore';
+import { useAnimationStore } from '@/store/animationStore';
+import { computePoseOverrides, KEYFRAME_PROPS, getNodePropertyValue, upsertKeyframe } from '@/renderer/animationEngine';
 import { ScenePass } from '@/renderer/scenePass';
 import { importPsd } from '@/io/psd';
 import { detectCharacterFormat, organizeCharacterLayers, matchTag } from '@/io/psdOrganizer';
@@ -114,8 +116,13 @@ export default function CanvasViewport({ remeshRef, deleteMeshRef }) {
   const updateProject  = useProjectStore(s => s.updateProject);
   const editorState    = useEditorStore();
   const setBrush       = useEditorStore(s => s.setBrush);
+  const setEditorMode  = useEditorStore(s => s.setEditorMode);
   const { setSelection, setView } = editorState;
   const { themeMode, osTheme } = useTheme();
+
+  const animStore = useAnimationStore();
+  const animRef   = useRef(animStore);
+  animRef.current = animStore;
 
   // Stable refs for imperative callbacks
   const editorRef  = useRef(editorState);
@@ -145,9 +152,21 @@ export default function CanvasViewport({ remeshRef, deleteMeshRef }) {
       return;
     }
 
-    const tick = () => {
+    const tick = (timestamp) => {
+      // Advance animation playback and mark dirty if time moved
+      const moved = animRef.current.tick(timestamp);
+      if (moved) isDirtyRef.current = true;
+
       if (isDirtyRef.current && sceneRef.current) {
-        sceneRef.current.draw(projectRef.current, editorRef.current, isDarkRef.current);
+        // Compute pose overrides from current animation state
+        const anim = animRef.current;
+        const proj = projectRef.current;
+        const activeAnim = proj.animations.find(a => a.id === anim.activeAnimationId) ?? null;
+        const poseOverrides = anim.isPlaying || anim.currentTime > 0
+          ? computePoseOverrides(activeAnim, anim.currentTime)
+          : null;
+
+        sceneRef.current.draw(projectRef.current, editorRef.current, isDarkRef.current, poseOverrides);
         isDirtyRef.current = false;
       }
       rafRef.current = requestAnimationFrame(tick);
@@ -165,6 +184,9 @@ export default function CanvasViewport({ remeshRef, deleteMeshRef }) {
   useEffect(() => { isDirtyRef.current = true; },
     [editorState.view, editorState.selection, editorState.overlays, editorState.meshEditMode]);
 
+  /* ── Mark dirty when animation time changes (scrubbing) ─────────────── */
+  useEffect(() => { isDirtyRef.current = true; }, [animStore.currentTime]);
+
   /* ── [ / ] brush size shortcuts (only in deform edit mode) ────────────── */
   useEffect(() => {
     const handler = (e) => {
@@ -176,6 +198,54 @@ export default function CanvasViewport({ remeshRef, deleteMeshRef }) {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [setBrush]);
+
+  /* ── K key — insert keyframes for selected nodes at current time ─────── */
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key !== 'k' && e.key !== 'K') return;
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      const ed   = editorRef.current;
+      const anim = animRef.current;
+      if (ed.editorMode !== 'animation') return;
+
+      const proj = projectRef.current;
+      if (proj.animations.length === 0) return;
+
+      const animId = anim.activeAnimationId ?? proj.animations[0]?.id;
+      if (!animId) return;
+
+      const selectedIds = ed.selection;
+      if (selectedIds.length === 0) return;
+
+      const currentTimeMs = anim.currentTime;
+
+      updateProject((p) => {
+        const animation = p.animations.find(a => a.id === animId);
+        if (!animation) return;
+
+        for (const nodeId of selectedIds) {
+          const node = p.nodes.find(n => n.id === nodeId);
+          if (!node) continue;
+
+          for (const prop of KEYFRAME_PROPS) {
+            const value = getNodePropertyValue(node, prop);
+
+            let track = animation.tracks.find(t => t.nodeId === nodeId && t.property === prop);
+            if (!track) {
+              track = { nodeId, property: prop, keyframes: [] };
+              animation.tracks.push(track);
+            }
+
+            upsertKeyframe(track.keyframes, currentTimeMs, value, 'linear');
+          }
+        }
+      });
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [updateProject]);
 
   /* ── Mesh worker dispatch ────────────────────────────────────────────── */
   const dispatchMeshWorker = useCallback((partId, imageData, opts) => {
@@ -846,6 +916,32 @@ export default function CanvasViewport({ remeshRef, deleteMeshRef }) {
 
       {/* Transform gizmo SVG overlay */}
       <GizmoOverlay />
+
+      {/* Editor mode toggle — top-left */}
+      <div className="absolute top-2 left-2 z-10 flex rounded overflow-hidden border border-border shadow-sm text-[11px] font-medium">
+        <button
+          onClick={() => setEditorMode('staging')}
+          className={[
+            'px-2.5 py-1 transition-colors',
+            editorState.editorMode !== 'animation'
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-card text-muted-foreground hover:text-foreground hover:bg-muted',
+          ].join(' ')}
+        >
+          Staging
+        </button>
+        <button
+          onClick={() => setEditorMode('animation')}
+          className={[
+            'px-2.5 py-1 transition-colors border-l border-border',
+            editorState.editorMode === 'animation'
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-card text-muted-foreground hover:text-foreground hover:bg-muted',
+          ].join(' ')}
+        >
+          Animation
+        </button>
+      </div>
 
       {/* Drop hint overlay */}
       {project.nodes.length === 0 && (

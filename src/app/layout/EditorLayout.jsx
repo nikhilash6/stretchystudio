@@ -7,6 +7,7 @@ import {
 import CanvasViewport from '@/components/canvas/CanvasViewport';
 import { LayerPanel } from '@/components/layers/LayerPanel';
 import { Inspector } from '@/components/inspector/Inspector';
+import { TimelinePanel } from '@/components/timeline/TimelinePanel';
 
 export default function EditorLayout() {
   /**
@@ -58,14 +59,9 @@ export default function EditorLayout() {
                 <CanvasViewport remeshRef={remeshRef} deleteMeshRef={deleteMeshRef} />
               </ResizablePanel>
               <ResizableHandle />
-              <ResizablePanel defaultSize={15} minSize={8} collapsible>
+              <ResizablePanel defaultSize={20} minSize={12} collapsible>
                 <div className="flex h-full flex-col border-t">
-                  <div className="px-3 py-2 border-b shrink-0">
-                    <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Timeline</h2>
-                  </div>
-                  <div className="flex-1 flex items-center justify-center">
-                    <p className="text-xs text-muted-foreground">Add parameters to unlock the timeline (M5)</p>
-                  </div>
+                  <TimelinePanel />
                 </div>
               </ResizablePanel>
             </ResizablePanelGroup>
