@@ -137,11 +137,19 @@ Project
 **Goal:** AE-lite timeline for posing and animating.
 
 **What to build:**
-1. **AnimationStore** (`src/store/animationStore.js`):
+1. **Editor Mode Toggle** (top-left of CanvasViewport):
+   - Two-state toggle: `Staging` | `Animation`
+   - `Staging` = current M3 workflow (transform gizmo, mesh editing, layer operations)
+   - `Animation` = timeline-active mode (keyframing, playback, pose overrides apply)
+   - Stored in `editorStore` as `editorMode: 'staging' | 'animation'`
+   - Toggle sits as an absolute-positioned overlay at `top-2 left-2` in CanvasViewport, `z-10`
+
+2. **AnimationStore** (`src/store/animationStore.js`):
    - `currentTime`, `isPlaying`, `duration`, `fps`
    - `activeAnimationId`
    - `poseOverrides`: Map of `nodeId → interpolated {x, y, rotation, scaleX, scaleY, opacity}`
-2. **Animation Data Model**:
+
+3. **Animation Data Model**:
    ```
    project.animations = [{
      id, name, duration (ms), fps,
@@ -152,19 +160,32 @@ Project
      }]
    }]
    ```
-3. **Timeline UI** (`src/components/timeline/`):
+
+4. **Timeline Transport Controls** (`src/components/timeline/`):
+   - **Current Frame** field — shows/sets playhead position (integer frame number)
+   - **Start Frame** field — first frame of loop range (default 0)
+   - **End Frame** field — last frame of loop range (default = duration × fps)
+   - Start/End determine the loop window during playback
+   - **Speed slider** — playback rate multiplier, default 0 (paused), range 0×–2×
+   - **FPS field** — frames per second for this animation clip (integer, default 24)
+
+5. **Timeline UI** (`src/components/timeline/`):
    - Horizontal tracks per node (collapsible)
    - Keyframe diamonds (◆) at time positions
    - Scrubber/playhead for seeking
    - Play/Pause/Stop/Loop transport buttons
-4. **Keyframe Workflow**:
+
+6. **Keyframe Workflow**:
    - Press **K** at scrubber position → snapshot current transforms into keyframes
    - Auto-keyframe toggle: any transform drag auto-records keyframe
-5. **Playback Engine**:
+
+7. **Playback Engine**:
    - rAF loop reads `currentTime`, interpolates between keyframes
    - Applies to `poseOverrides` (does NOT mutate `projectStore`)
    - Renderer reads overrides during draw if playing
-6. **Mesh Warp Keyframes**:
+   - Respects Start/End frame loop range and Speed multiplier
+
+8. **Mesh Warp Keyframes**:
    - `mesh_verts` property stores `Float32Array` snapshot of vertex positions
    - Interpolated per-vertex during playback (enables tail-wag, leg-bend, etc.)
 
@@ -262,7 +283,7 @@ World matrices computed each frame from node tree + pose overrides. No caching i
 
 | Metric | Value |
 |--------|-------|
-| **Status** | Production-ready for M4 (mesh-on-demand architecture) |
+| **Status** | M3 production-ready; M4 design in progress (mode toggle, timeline controls) |
 | **Files Modified/Created** | 15+ |
 | **Line Count** (core) | ~3100 (renderer + store + UI + alpha picking) |
 | **Bundle Size** | 587 KB minified, 187 KB gzipped |
@@ -309,10 +330,13 @@ World matrices computed each frame from node tree + pose overrides. No caching i
 ## 10. Next Steps
 
 1. **M4 Timeline** (next sprint):
-   - Build AnimationStore with poseOverrides
+   - Implement editor mode toggle (`Staging` | `Animation`) in top-left CanvasViewport
+   - Build AnimationStore with poseOverrides, currentTime, isPlaying
+   - Timeline transport controls: Current Frame, Start Frame, End Frame fields, Speed slider, FPS field
    - Timeline UI with keyframe editor
-   - Playback engine with interpolation
+   - Playback engine with interpolation respecting loop range and speed multiplier
    - Integrate renderer to read pose overrides during draw
+   - Keyframe workflow (K key for pose snapshots)
 
 2. **M5 Export** (following sprint):
    - Frame capture loop
