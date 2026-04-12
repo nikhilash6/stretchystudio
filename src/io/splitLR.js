@@ -124,9 +124,9 @@ export function splitLayerLR(layer, psdW, psdH) {
   const cx1 = sumX.get(root1) / cnt1;
   const cx2 = sumX.get(root2) / cnt2;
 
-  // Lower centroid X → Viewer's left (-l)
-  const rootLeft  = cx1 < cx2 ? root1 : root2;
-  const rootRight = cx1 < cx2 ? root2 : root1;
+  // Character Perspective (facing viewer): Lower centroid X → Character's Right (-r)
+  const rootRight = cx1 < cx2 ? root1 : root2;
+  const rootLeft  = cx1 < cx2 ? root2 : root1;
 
   /* 6. Extract each component into its own cropped ImageData */
   function extractComponent(root) {

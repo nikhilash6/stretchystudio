@@ -134,11 +134,11 @@ export function estimateSkeletonFromBounds(layers, psdW, psdH) {
   const face = getBbox('face') ?? firstOf(['front hair', 'headwear']);
   if (face) {
     kp.nose    = { x: face.cx,                   y: face.cy + face.h * 0.08 };
-    kp.lEye    = { x: face.cx - face.w * 0.18,   y: face.cy - face.h * 0.05 };
-    kp.rEye    = { x: face.cx + face.w * 0.18,   y: face.cy - face.h * 0.05 };
+    kp.lEye    = { x: face.cx + face.w * 0.18,   y: face.cy - face.h * 0.05 };
+    kp.rEye    = { x: face.cx - face.w * 0.18,   y: face.cy - face.h * 0.05 };
     kp.midEye  = { x: face.cx,                   y: face.cy - face.h * 0.05 };
-    kp.lEar    = { x: face.cx - face.w * 0.45,   y: face.cy };
-    kp.rEar    = { x: face.cx + face.w * 0.45,   y: face.cy };
+    kp.lEar    = { x: face.cx + face.w * 0.45,   y: face.cy };
+    kp.rEar    = { x: face.cx - face.w * 0.45,   y: face.cy };
     // Head joint at bottom of face layer
     kp.headBase = { x: face.cx,                   y: face.y + face.h };
   }
@@ -147,8 +147,8 @@ export function estimateSkeletonFromBounds(layers, psdW, psdH) {
   const topwear = getBbox('topwear');
   if (topwear) {
     kp.neck        = { x: topwear.cx,                       y: topwear.y };
-    kp.lShoulder   = { x: topwear.x + topwear.w * 0.15,    y: topwear.y + topwear.h * 0.12 };
-    kp.rShoulder   = { x: topwear.x + topwear.w * 0.85,    y: topwear.y + topwear.h * 0.12 };
+    kp.lShoulder   = { x: topwear.x + topwear.w * 0.85,    y: topwear.y + topwear.h * 0.12 };
+    kp.rShoulder   = { x: topwear.x + topwear.w * 0.15,    y: topwear.y + topwear.h * 0.12 };
     kp.shoulderMid = { x: topwear.cx,                       y: topwear.y + topwear.h * 0.12 };
     kp.spine       = { x: topwear.cx,                       y: topwear.cy };
     kp.waist       = { x: topwear.cx,                       y: topwear.y + topwear.h * 0.85 };
@@ -178,8 +178,8 @@ export function estimateSkeletonFromBounds(layers, psdW, psdH) {
   const bottomwear = getBbox('bottomwear');
   if (bottomwear) {
     kp.pelvis = { x: bottomwear.cx,                        y: bottomwear.cy };
-    kp.lHip   = { x: bottomwear.cx - bottomwear.w * 0.2,  y: bottomwear.y + bottomwear.h * 0.15 };
-    kp.rHip   = { x: bottomwear.cx + bottomwear.w * 0.2,  y: bottomwear.y + bottomwear.h * 0.15 };
+    kp.lHip   = { x: bottomwear.cx + bottomwear.w * 0.2,  y: bottomwear.y + bottomwear.h * 0.15 };
+    kp.rHip   = { x: bottomwear.cx - bottomwear.w * 0.2,  y: bottomwear.y + bottomwear.h * 0.15 };
   } else if (kp.waist) {
     kp.pelvis = { x: kp.waist.x,           y: kp.waist.y + psdH * 0.08 };
     kp.lHip   = { x: kp.pelvis.x - psdW * 0.1, y: kp.pelvis.y };
@@ -207,13 +207,13 @@ export function estimateSkeletonFromBounds(layers, psdW, psdH) {
   if (!kp.pelvis)      kp.pelvis      = { x: cx,              y: cy };
   if (!kp.neck)        kp.neck        = { x: cx,              y: psdH * 0.25 };
   if (!kp.headBase)    kp.headBase    = { x: cx,              y: psdH * 0.22 };
-  if (!kp.lShoulder)   kp.lShoulder   = { x: cx - psdW * 0.15, y: psdH * 0.30 };
-  if (!kp.rShoulder)   kp.rShoulder   = { x: cx + psdW * 0.15, y: psdH * 0.30 };
+  if (!kp.lShoulder)   kp.lShoulder   = { x: cx + psdW * 0.15, y: psdH * 0.30 };
+  if (!kp.rShoulder)   kp.rShoulder   = { x: cx - psdW * 0.15, y: psdH * 0.30 };
   if (!kp.shoulderMid) kp.shoulderMid = { x: cx,              y: psdH * 0.30 };
   if (!kp.waist)       kp.waist       = { x: cx,              y: psdH * 0.55 };
   if (!kp.spine)       kp.spine       = { x: cx,              y: psdH * 0.42 };
-  if (!kp.lHip)        kp.lHip        = { x: cx - psdW * 0.1, y: psdH * 0.58 };
-  if (!kp.rHip)        kp.rHip        = { x: cx + psdW * 0.1, y: psdH * 0.58 };
+  if (!kp.lHip)        kp.lHip        = { x: cx + psdW * 0.1, y: psdH * 0.58 };
+  if (!kp.rHip)        kp.rHip        = { x: cx - psdW * 0.1, y: psdH * 0.58 };
   if (!kp.midEye)      kp.midEye      = { x: cx,              y: psdH * 0.18 };
 
   return kp;
