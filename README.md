@@ -21,6 +21,7 @@ Unlike traditional bone-based systems, Stretchy Studio focuses on a **timeline-f
 - **Intuitive Gizmos**: World-space move and rotate handles for direct canvas manipulation; rotatable skeletal arcs on animation timeline.
 - **Armature Auto-Rig**: DWPose ONNX-based skeleton detection for see-through PSD characters; joint-based bones as group nodes with pivotX/Y positioning.
 - **2D Iris Trackpad**: Dedicated 2D square trackpad UI for intuitive iris/eye movement; anchored optimally above the head to avoid face obstruction.
+- **Limb Bending (Elbows/Knees)**: Realistic 2D vertex skinning for arms and legs. Automatically computes bone weights by projecting vertices onto bone axes. Works seamlessly with direct rotation handles.
 - **Automatic Iris Clipping**: Advanced stencil-based masking keeps irides contained within eyewhites. Intelligent L/R matching handles split-eye characters out-of-the-box via name-suffix detection.
 - **Pivot Calibration**: Accurate pivot placement for natural rotations and scaling.
 - **Selection Isolation**: Selection and Gizmos automatically lock/hide when skeleton is active to prevent accidental layer changes during rigging.

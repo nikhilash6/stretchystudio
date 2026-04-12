@@ -169,7 +169,7 @@ function NodeDetails({ node }) {
 
 /* ── Transform panel ──────────────────────────────────────────────────────── */
 
-function TransformPanel({ node }) {
+function TransformPanel({ node, allNodes }) {
   const updateProject = useProjectStore(s => s.updateProject);
 
   const setTransformField = useCallback((field, value) => {
@@ -254,6 +254,19 @@ function TransformPanel({ node }) {
       >
         Reset Transform
       </Button>
+      
+      {/* Limb skinning warning */}
+      {(() => {
+        const JSKinningRoles = new Set(['leftElbow', 'rightElbow', 'leftKnee', 'rightKnee']);
+        if (!JSKinningRoles.has(node.boneRole)) return null;
+        const hasDependent = allNodes.some(n => n.type === 'part' && n.mesh?.jointBoneId === node.id);
+        if (hasDependent) return null;
+        return (
+          <div className="mt-2 p-2 rounded bg-amber-500/10 border border-amber-500/30 text-xs leading-relaxed text-amber-500">
+            <span className="font-bold">⚠ Limb mesh required.</span> To enable rotation deformation: (1) Hide armature, (2) Select the limb layer, and (3) Click 'Remesh'.
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -404,7 +417,7 @@ function MeshPanel({ node, onRemesh, onDeleteMesh }) {
       )}
 
       {!node.mesh && (
-        <p className="text-[11px] text-muted-foreground leading-relaxed">
+        <p className="text-xs text-muted-foreground leading-relaxed">
           No mesh. Generate one to enable vertex editing and mesh warp animation.
         </p>
       )}
@@ -417,7 +430,7 @@ function MeshPanel({ node, onRemesh, onDeleteMesh }) {
         const parentNode = allNodes.find(n => n.id === node.parent);
         if (!parentNode || !LIMB_ROLES.has(parentNode.boneRole)) return null;
         return (
-          <p className="text-[11px] leading-relaxed rounded px-2 py-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-400">
+          <p className="text-xs leading-relaxed rounded px-2 py-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-400">
             ⚠ Mesh was generated before rigging. Click <strong>Remesh</strong> to enable elbow/knee deformation.
           </p>
         );
@@ -516,7 +529,7 @@ export function Inspector({ onRemesh, onDeleteMesh }) {
         <>
           <NodeDetails node={selectedNode} />
           <Separator />
-          <TransformPanel node={selectedNode} />
+          <TransformPanel node={selectedNode} allNodes={nodes} />
           {selectedNode.type === 'part' && (
             <>
               <Separator />

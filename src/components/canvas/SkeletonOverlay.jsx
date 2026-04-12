@@ -18,6 +18,7 @@ import { useAnimationStore } from '@/store/animationStore';
 import { SKELETON_CONNECTIONS } from '@/io/armatureOrganizer';
 import { computeWorldMatrices, mat3Identity } from '@/renderer/transforms';
 import { computePoseOverrides } from '@/renderer/animationEngine';
+import { useToast } from '@/hooks/use-toast';
 
 // Colour palette
 const COLOUR_NORMAL = '#ef4444';      // red — not in edit mode
@@ -63,6 +64,7 @@ export default function SkeletonOverlay({ view, editorMode, showSkeleton, skelet
   const nodes          = useProjectStore(s => s.project.nodes);
   const animations     = useProjectStore(s => s.project.animations);
 
+  const selection      = useEditorStore(s => s.selection);
   const setSelection   = useEditorStore(s => s.setSelection);
   const animCurrentTime       = useAnimationStore(s => s.currentTime);
   const animActiveAnimationId = useAnimationStore(s => s.activeAnimationId);
@@ -80,6 +82,25 @@ export default function SkeletonOverlay({ view, editorMode, showSkeleton, skelet
   useEffect(() => { viewRef.current = view; }, [view]);
   useEffect(() => { editorModeRef.current = editorMode; }, [editorMode]);
   useEffect(() => { setDraftPoseRef.current = setDraftPose; }, [setDraftPose]);
+
+  const { toast } = useToast();
+  useEffect(() => {
+    if (selection.length !== 1) return;
+    const nodeId = selection[0];
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node || node.type !== 'group' || !node.boneRole) return;
+
+    const JSKinningRoles = new Set(['leftElbow', 'rightElbow', 'leftKnee', 'rightKnee']);
+    if (JSKinningRoles.has(node.boneRole)) {
+      const hasDependent = nodes.some(n => n.type === 'part' && n.mesh?.jointBoneId === node.id);
+      if (!hasDependent) {
+        toast({
+          title: "Limb mesh required",
+          description: "To enable rotation: (1) Hide armature, (2) Select the limb layer, (3) Click 'Remesh'."
+        });
+      }
+    }
+  }, [selection, nodes, toast]);
 
   // Compute effective nodes (animation overrides + draft pose)
   const ANIM_KEYS = ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'hSkew'];

@@ -2,6 +2,7 @@ import React from 'react';
 import EditorLayout from '@/app/layout/EditorLayout';
 import { Palette, Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Toaster } from '@/components/ui/toaster';
 import { useTheme, AVAILABLE_FONTS } from '@/contexts/ThemeProvider';
 import { lightThemePresets, darkThemePresets } from '@/lib/themePresets';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -39,6 +40,7 @@ function App() {
   return (
     <>
       <EditorLayout />
+      <Toaster />
       <Popover>
         <PopoverTrigger asChild>
           <Button

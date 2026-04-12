@@ -164,55 +164,38 @@ Project
 ---
 
 ### ✅ M5 — Armature Auto-Rig & Skeleton Animation (Completed 2026-04-11)
+ 
+ **Goal:** Enable rigging of see-through PSD characters for vtuber-style animation via DWPose skeleton detection.
 
-**Goal:** Enable rigging of see-through PSD characters for vtuber-style animation via DWPose skeleton detection.
+ - **DWPose ONNX Integration** (`src/io/armatureOrganizer.js`):
+   - Load and cache DWPose session (dw-ll_ucoco_384.onnx) from HuggingFace CDN
+   - 133-keypoint pose detection with SimCC output format
+  - Keypoint mapping to character skeleton: neck, waist, shoulder midpoint, and limb joints (elbows/knees).
 
-**What was built:**
-- **DWPose ONNX Integration** (`src/io/armatureOrganizer.js`):
-  - Load and cache DWPose session (dw-ll_ucoco_384.onnx) from HuggingFace CDN
-  - 133-keypoint pose detection with SimCC output format
-  - Keypoint mapping to character skeleton: neck, waist, shoulder midpoint computed from COCO-17 body points
-  
-- **Armature Node Builder**:
-  - Create hierarchical bone structure: `root → torso → head → eyes`, `root → [left/right]Leg`, `torso → [left/right]Arm`
-  - All bones are group nodes with `boneRole` property
-  - Joint positions stored as `transform.pivotX/Y` (no new data types needed)
-  
-- **Skeleton Edit Overlay** (`src/components/canvas/SkeletonOverlay.jsx`):
-  - SVG overlay showing bone lines (cyan) and joint circles
-  - **Skeleton Edit Mode** (staging only):
-    - Draggable joint dots to reposition bone pivots
-    - Labels show bone role names
-  - **Rotation Arc Handles** (staging & animation modes):
-    - 270° amber arcs around animatable bones (torso, head, arms, legs)
-    - Drag arc to rotate bone instantly
-    - Shift-click snaps to 15° increments
-    - Click joint circle to select bone → GizmoOverlay appears for fine-tuning
-    - In animation mode: rotation written to draftPose; press K to keyframe
-  - **2D Iris Trackpad** (Added 2026-04-11):
-    - Dedicated 80x80px square trackpad for the `eyes` bone
-    - Positioned -120px above the head to maintain clear view of expressions
-    - Uses parent world-space anchoring for stable dragging during face motion
-    - Direct mapping to `x/y` transform properties (clamped to ±40px)
-    - Full support for `draftPose` and keyframing (K key)
-  - **Selection & Gizmo Isolation**:
-    - Automatic layer selection disabled when skeleton is visible
-    - `GizmoOverlay` hidden during rigging/skeleton interactions to reduce clutter
-    - Left-click exclusively targets bones; Middle/Right click preserved for panning
-  - Uses `effectiveNodes` + `computeWorldMatrices` for correct world-space bone positions after parent rotations
-  
-- **Rig Modal** (CanvasViewport.jsx):
-  - Local .onnx file picker or HuggingFace download
-  - Runs DWPose inference on imported image
-  - Auto-creates bone hierarchy from keypoints
-  
-- **Armature Management Panel** (Added 2026-04-11):
-  - Moved "Hide Skeleton" and "Edit Joints" from floating canvas overlays to a dedicated "Armature" panel in the right sidebar.
-  - Positioned above the Inspector for immediate access to rigging controls.
-  - Features status indicators (e.g., pulsing edit mode) and Lucide icons for better visual feedback.
-  - Cleans up the canvas workspace for better visibility of the character.
+- **Limb Bending & Vertex Skinning** (Added 2026-04-12):
+  - **Axis-Aware Weighting**: Vertices in limb layers (arms/legs) are automatically assigned weights by projecting them onto the shoulder-elbow or hip-knee axis. 
+  - **JS-Driven Skinning**: Elbow and knee rotations locally deform mesh vertices in real-time via a custom skinning engine in `SkeletonOverlay.jsx`.
+  - **Auto-Keyframing**: Keyframing a limb joint automatically captures the deformed vertex positions for the associated part.
+   
+ - **Armature Node Builder**:
+  - Create hierarchical bone structure: `root → torso → head → eyes`, `root → [left/right]Leg → [left/right]Knee`, `torso → [left/right]Arm → [left/right]Elbow`
+   - All bones are group nodes with `boneRole` property
+   - Joint positions stored as `transform.pivotX/Y` (no new data types needed)
+   
+ - **Skeleton Overlay & Deformation** (`src/components/canvas/SkeletonOverlay.jsx`):
+   - SVG overlay showing bone lines (cyan) and joint circles
+   - **Skeleton Edit Mode** (staging only):
+     - Draggable joint dots to reposition bone pivots
+     - Click joint circle to select bone → GizmoOverlay appears for fine-tuning
+     - In animation mode: rotation written to draftPose; press K to keyframe
+     - **Limb Rotation Handles**: Amber arcs at elbows and knees trigger JS-driven vertex deformation.
+     - **Skinning Commit**: In staging mode, limb rotations commit deformed vertices directly to the base mesh on release.
+   - **2D Iris Trackpad** (Added 2026-04-11):
+     - Dedicated 80x80px square trackpad for the `eyes` bone
+     - Positioned -120px above the head to maintain clear view of expressions
+ 
+ **Exit Criteria Met:** Import see-through PSD → click "Auto-Rig" → DWPose loads → bones appear on canvas → drag arcs in staging to pose → switch to animation mode → drag arcs + press K to keyframe → scrub timeline → character animates with bone rotations and smooth limb bending.
 
-**Exit Criteria Met:** Import see-through PSD → click "Auto-Rig" → DWPose loads → bones appear on canvas → drag arcs in staging to pose → switch to animation mode → drag arcs + press K to keyframe → scrub timeline → character animates with bone rotations applied hierarchically.
 
 **Key Design Decisions:**
 - Bones ARE group nodes (no new structure), pivots ARE joint positions (no extra fields)
