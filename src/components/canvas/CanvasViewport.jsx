@@ -697,7 +697,7 @@ export default function CanvasViewport({ remeshRef, deleteMeshRef }) {
       if (detectCharacterFormat(layers)) {
         // See-through character detected → open import wizard
         setWizardPsd({ psdW, psdH, layers, partIds });
-        setWizardStep('choose');
+        setWizardStep('review');
       } else {
         finalizePsdImport(psdW, psdH, layers, partIds, [], null);
       }

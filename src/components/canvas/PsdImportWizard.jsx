@@ -1,7 +1,9 @@
 import { useState, useCallback } from 'react';
+import { ChevronDown, ChevronRight, AlertTriangle, CheckCircle, Circle } from 'lucide-react';
 import {
   loadDWPoseSession, runDWPose, buildArmatureNodes, analyzeGroups,
   matchTag, estimateSkeletonFromBounds, DWPOSE_URL, clearDWPoseSession,
+  KNOWN_TAGS,
 } from '../../io/armatureOrganizer';
 
 export default function PsdImportWizard({
@@ -16,24 +18,54 @@ export default function PsdImportWizard({
 }) {
   const [rigStatus, setRigStatus] = useState('');
   const [rigLoading, setRigLoading] = useState(false);
+  const [tagOverrides, setTagOverrides] = useState({});
+  const [mappingExpanded, setMappingExpanded] = useState(false);
 
   const { psdW, psdH, layers, partIds } = pendingPsd || {};
-  const matchCount = layers ? layers.filter(l => matchTag(l.name) !== null).length : 0;
+
+  /* ── Effective layers: apply tag overrides by renaming to canonical tag ── */
+  const effectiveLayers = layers
+    ? layers.map(l =>
+        tagOverrides[l.name] ? { ...l, name: tagOverrides[l.name] } : l
+      )
+    : [];
+
+  const matchCount = effectiveLayers.filter(l => matchTag(l.name) !== null).length;
+  const unmatchedLayers = layers
+    ? layers.filter(l => {
+        const effective = tagOverrides[l.name] ?? null;
+        if (effective !== null) return false; // user-assigned
+        return matchTag(l.name) === null;
+      })
+    : [];
+  const tooFew = matchCount < 4;
+
+  /* ── Handle tag override dropdown change ────────────────────────────────── */
+  const handleTagChange = useCallback((layerName, value) => {
+    setTagOverrides(prev => {
+      const next = { ...prev };
+      if (value === '') {
+        delete next[layerName];
+      } else {
+        next[layerName] = value;
+      }
+      return next;
+    });
+  }, []);
 
   /* ── Handle manual rigging (bounding-box heuristic) ────────────────────── */
   const handleRigManually = useCallback(async () => {
     setRigLoading(true);
     try {
       const layerMap = {};
-      layers.forEach(l => {
+      effectiveLayers.forEach(l => {
         const key = l.name.toLowerCase().trim();
         layerMap[key] = l;
       });
       const groups = analyzeGroups(layerMap);
 
-      const skeleton = estimateSkeletonFromBounds(layers, psdW, psdH);
-      const { groupDefs, assignments } = buildArmatureNodes(skeleton, groups, layers, partIds, () => {
-        // uid function — use simple counter based on existing IDs
+      const skeleton = estimateSkeletonFromBounds(effectiveLayers, psdW, psdH);
+      const { groupDefs, assignments } = buildArmatureNodes(skeleton, groups, effectiveLayers, partIds, () => {
         return `grp-${Math.random().toString(36).substr(2, 9)}`;
       });
 
@@ -44,7 +76,7 @@ export default function PsdImportWizard({
     } finally {
       setRigLoading(false);
     }
-  }, [layers, psdW, psdH, partIds, onFinalize]);
+  }, [effectiveLayers, psdW, psdH, partIds, onFinalize]);
 
   /* ── Handle DWPose rigging ────────────────────────────────────────────── */
   const runArmatureRig = useCallback(async (onnxPayload) => {
@@ -55,16 +87,16 @@ export default function PsdImportWizard({
       onnxSessionRef.current = session;
 
       const layerMap = {};
-      layers.forEach(l => {
+      effectiveLayers.forEach(l => {
         const key = l.name.toLowerCase().trim();
         layerMap[key] = l;
       });
       const groups = analyzeGroups(layerMap);
 
-      const skeleton = await runDWPose(layers, psdW, psdH, session, setRigStatus);
+      const skeleton = await runDWPose(effectiveLayers, psdW, psdH, session, setRigStatus);
 
       setRigStatus('Building rig…');
-      const { groupDefs, assignments } = buildArmatureNodes(skeleton, groups, layers, partIds, () => {
+      const { groupDefs, assignments } = buildArmatureNodes(skeleton, groups, effectiveLayers, partIds, () => {
         return `grp-${Math.random().toString(36).substr(2, 9)}`;
       });
 
@@ -76,7 +108,129 @@ export default function PsdImportWizard({
     } finally {
       setRigLoading(false);
     }
-  }, [layers, psdW, psdH, partIds, onFinalize, onnxSessionRef]);
+  }, [effectiveLayers, psdW, psdH, partIds, onFinalize, onnxSessionRef]);
+
+  /* ── Step: Review layer mapping ─────────────────────────────────────── */
+  if (step === 'review') {
+    const layerMappings = layers
+      ? layers.map(l => ({
+          layer: l,
+          tag: tagOverrides[l.name] ?? matchTag(l.name),
+          overridden: l.name in tagOverrides,
+        }))
+      : [];
+
+    const hasWarnings = unmatchedLayers.length > 0;
+    const allMatched = unmatchedLayers.length === 0;
+
+    return (
+      <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70">
+        <div className="bg-popover border border-border rounded-lg shadow-2xl p-6 max-w-md w-full mx-4 flex flex-col gap-4">
+          <h3 className="text-base font-semibold text-foreground">Review Layer Mapping</h3>
+
+          {/* Collapsed summary row */}
+          <button
+            onClick={() => setMappingExpanded(v => !v)}
+            className="flex items-center gap-2 w-full text-left px-3 py-2 rounded border border-border hover:bg-muted transition-colors"
+          >
+            {tooFew ? (
+              <AlertTriangle size={14} className="text-amber-400 shrink-0" />
+            ) : allMatched ? (
+              <CheckCircle size={14} className="text-green-500 shrink-0" />
+            ) : (
+              <AlertTriangle size={14} className="text-amber-400 shrink-0" />
+            )}
+            <span className="flex-1 text-xs text-foreground">
+              {matchCount} of {layers.length} layers matched
+              {hasWarnings && (
+                <span className="text-amber-400 ml-1">
+                  · {unmatchedLayers.length} unmatched
+                </span>
+              )}
+              {tooFew && (
+                <span className="text-amber-400 ml-1">· too few for auto-rig</span>
+              )}
+            </span>
+            {mappingExpanded
+              ? <ChevronDown size={13} className="text-muted-foreground shrink-0" />
+              : <ChevronRight size={13} className="text-muted-foreground shrink-0" />
+            }
+          </button>
+
+          {/* Expanded layer table */}
+          {mappingExpanded && (
+            <div className="border border-border rounded overflow-hidden">
+              <div className="max-h-56 overflow-y-auto">
+                {layerMappings.map(({ layer, tag, overridden }) => (
+                  <div
+                    key={layer.name}
+                    className="flex items-center gap-2 px-2 py-1 border-b border-border last:border-b-0 hover:bg-muted/50"
+                  >
+                    {/* Status icon */}
+                    <span className="shrink-0">
+                      {tag !== null ? (
+                        <CheckCircle size={11} className={overridden ? 'text-blue-400' : 'text-green-500'} />
+                      ) : (
+                        <Circle size={11} className="text-amber-400" />
+                      )}
+                    </span>
+
+                    {/* Layer name */}
+                    <span
+                      className="flex-1 text-[11px] text-muted-foreground truncate"
+                      title={layer.name}
+                    >
+                      {layer.name}
+                    </span>
+
+                    {/* Tag dropdown */}
+                    <select
+                      value={tagOverrides[layer.name] ?? (matchTag(layer.name) ?? '')}
+                      onChange={e => handleTagChange(layer.name, e.target.value)}
+                      className={[
+                        'text-[11px] rounded border px-1 py-0.5 bg-background outline-none shrink-0',
+                        tag !== null
+                          ? 'border-border text-foreground'
+                          : 'border-amber-500/50 text-amber-400',
+                      ].join(' ')}
+                    >
+                      <option value="">— unassigned —</option>
+                      {KNOWN_TAGS.map(t => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Warning messages */}
+          {tooFew && (
+            <p className="text-[11px] text-amber-400 leading-relaxed">
+              At least 4 layers must be matched for automatic rigging. Assign unmatched layers above or skip rigging.
+            </p>
+          )}
+
+          {/* Footer */}
+          <div className="flex items-center justify-between border-t border-border pt-3 gap-2">
+            <button
+              onClick={onSkip}
+              className="px-3 py-1.5 text-xs rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              Skip rigging
+            </button>
+            <button
+              onClick={() => onSetStep('choose')}
+              className="px-3 py-1.5 text-xs rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium"
+            >
+              Continue →
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   /* ── Step: Choose rigging method ────────────────────────────────────── */
   if (step === 'choose') {
@@ -117,6 +271,17 @@ export default function PsdImportWizard({
             >
               <div className="font-medium">Skip rigging</div>
               <div className="text-xs text-muted-foreground">Import flat, no skeleton</div>
+            </button>
+          </div>
+
+          {/* Back to review */}
+          <div className="flex justify-start border-t border-border pt-3">
+            <button
+              disabled={rigLoading}
+              className="px-3 py-1.5 text-xs rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40"
+              onClick={() => onSetStep('review')}
+            >
+              ← Back
             </button>
           </div>
         </div>
