@@ -1,10 +1,10 @@
 # 🧬 Stretchy Studio
 
-**Bring your 2D illustrations to life with fluid, mesh-based animation.**
+**The fastest way to rig and animate "See-Through" SOTA character models.**
 
-Stretchy Studio is a high-performance 2D animation tool designed for illustrators and animators. It streamlines the workflow from static artwork (PSD/PNG) to fully realized, mesh-deformable animations and spritesheets.
+Stretchy Studio is a high-performance 2D animation tool designed to turn static layers into expressive, mesh-deformed animations. We are built specifically to bridge the gap between AI-driven layer decomposition (like the **See-Through** SOTA model) and professional-grade animation.
 
-Unlike traditional bone-based systems, Stretchy Studio focuses on a **timeline-first, direct-deformation workflow**—giving you professional flexibility with a much lower learning curve.
+Unlike traditional bone-based systems, Stretchy Studio combines **AI-powered auto-rigging** with a **timeline-first, direct-deformation workflow**—letting you go from a flat PSD to a fully rigged character in minutes.
 
 [🚀 Launch the Editor](https://editor.stretchy.studio) | [💬 Join the Discord](https://discord.com/invite/zB6TrHTwAb) | [🌐 Visit the Website](https://stretchy.studio)
 
@@ -12,14 +12,14 @@ Unlike traditional bone-based systems, Stretchy Studio focuses on a **timeline-f
 
 ## ✨ Key Highlights
 
-### 📂 Intelligent PSD Import
-Stop wasting time organizing layers. Drag your PSD files directly into the editor. Stretchy Studio automatically recognizes over 23 character parts (like eyes, eyebrows, and limbs) and sets up your hierarchy for you instantly.
+### 📂 Native "See-Through" Support
+Optimized for characters generated via SOTA layer decomposition models. Import your segmented PSDs and let Stretchy Studio handle the complex occlusions, depth layering, and mesh generation automatically.
 
 ### 📐 Magic Auto-Rigging
-Rigging doesn't have to be a chore. Use **AI-powered pose detection** to automatically generate a skeleton for your character, or use our instant "heuristic" method to get moving in seconds.
+Rigging doesn't have to be a chore. Use **AI-powered pose detection** (DWPose) to automatically generate a skeleton for your character, or use our instant "heuristic" method to get moving in seconds.
 
 ### 🎬 Organic "Stretchy" Motion
-Don't just rotate layers—warp them! Animate individual mesh vertices to create organic, fluid motion. Perfect for breathing effects, flowing hair, and expressive facial animations.
+Don't just rotate layers—warp them! Animate individual mesh vertices to create organic, fluid motion. Perfect for breathing effects, flowing hair, and those subtle "Live2D-style" micro-expressions.
 
 ### 🔦 Pro-Grade Features, Simply Made
 - **2D Iris Trackpad**: Move eyes naturally with a dedicated, intuitive control pad.
@@ -45,11 +45,11 @@ Don't just rotate layers—warp them! Animate individual mesh vertices to create
 3. **Mesh**: Click "Generate Mesh" on any part to enable organic warping.
 4. **Animate**: Switch to **Animation** mode, create a clip, and start keyframing!
 
-### Rigged Character
-1. **Import & Rig**: Drag a see-through character PSD to trigger the 3-step Rigging Wizard.
-2. **Setup**: Choose AI-powered rigging (*DWPose*) or manual estimation, then adjust joints on canvas.
-3. **Animate**: Keyframe bone rotations and vertex deformations for advanced movement.
-4. **Playback**: Smoothly blend between keyframes with real-time vertex skinning.
+### SOTA Workflow (e.g., See-Through)
+1. **Import**: Drag your decomposed "See-Through" PSD into the editor.
+2. **Auto-Rig**: Launch the Rigging Wizard. Stretchy Studio uses AI to map your layers to a skeletal structure instantly.
+3. **Refine**: Adjust joint positions and mesh density to handle occluded areas (like hair behind the neck).
+4. **Animate**: Create fluid, multi-layered animations that take full advantage of the "See-Through" depth data.
 
 ---
 
