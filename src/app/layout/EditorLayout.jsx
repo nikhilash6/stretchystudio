@@ -12,7 +12,8 @@ import { TimelinePanel } from '@/components/timeline/TimelinePanel';
 import { AnimationListPanel } from '@/components/animation/AnimationListPanel';
 import { ArmaturePanel } from '@/components/armature/ArmaturePanel';
 import { ExportModal } from '@/components/export/ExportModal';
-import { Save, FolderOpen, Palette, Sun, Moon, SquareChartGantt, Download } from 'lucide-react';
+import { PreferencesModal } from '@/components/preferences/PreferencesModal';
+import { Save, FolderOpen, Palette, Sun, Moon, SquareChartGantt, Download, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { HelpIcon } from '@/components/ui/help-icon';
 import { useProjectStore } from '@/store/projectStore';
@@ -62,6 +63,7 @@ export default function EditorLayout() {
   const loadRef = useRef(null);
   const captureRef = useRef(null);
   const [exportModalOpen, setExportModalOpen] = React.useState(false);
+  const [preferencesOpen, setPreferencesOpen] = React.useState(false);
 
   const {
     themeMode, setThemeMode,
@@ -70,19 +72,6 @@ export default function EditorLayout() {
     fontFamily, setFontFamily,
     fontSize, setFontSize,
   } = useTheme();
-
-  const handleThemeSelectClick = () => {
-    const config = themeMode === 'dark' || (themeMode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches) ? {
-      title: 'Select Dark Theme',
-      themes: darkThemePresets,
-      onSelect: setDarkTheme,
-    } : {
-      title: 'Select Light Theme',
-      themes: lightThemePresets,
-      onSelect: setLightTheme,
-    };
-    openThemeModal(config);
-  };
 
   // Compute bounding box of all parts across all animation keyframes + rest pose
   const computeFitBounds = useCallback(() => {
@@ -156,7 +145,7 @@ export default function EditorLayout() {
       <header className="h-10 border-b flex items-center px-4 shrink-0 bg-card gap-3 relative">
         <div className="flex items-center gap-3 h-full">
           <span className="font-semibold text-sm select-none tracking-tight">Stretchy Studio</span>
-          <span className="text-xs text-muted-foreground border border-border/50 px-1.5 py-0.5 font-mono">v0.1</span>
+          <span className="text-xs text-muted-foreground border border-border/50 px-1.5 py-0.5 font-mono">v0.2</span>
 
           <div className="flex h-full items-stretch border-l border-r ml-1 mr-2">
             <Button
@@ -295,73 +284,15 @@ export default function EditorLayout() {
               </PopoverContent>
             </Popover>
 
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-full w-9 rounded-none border-l hover:bg-muted"
-                  title="Customize Theme"
-                >
-                  <Palette className="h-4 w-4" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-4 space-y-4 shadow-2xl border-border/60">
-                <div className="flex items-center gap-2">
-                  <ToggleGroup
-                    type="single"
-                    value={themeMode}
-                    onValueChange={(value) => {
-                      if (value) setThemeMode(value);
-                    }}
-                    aria-label="Theme mode"
-                  >
-                    <ToggleGroupItem value="light" aria-label="Light mode">
-                      <Sun className="h-4 w-4" />
-                    </ToggleGroupItem>
-                    <ToggleGroupItem value="dark" aria-label="Dark mode">
-                      <Moon className="h-4 w-4" />
-                    </ToggleGroupItem>
-                  </ToggleGroup>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleThemeSelectClick}
-                  >
-                    Select Theme
-                  </Button>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="font-select" className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Font Family</Label>
-                  <Select value={fontFamily} onValueChange={setFontFamily}>
-                    <SelectTrigger id="font-select" className="h-8 text-xs">
-                      <SelectValue placeholder="Select a font" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {AVAILABLE_FONTS.map((font) => (
-                        <SelectItem key={font.id} value={font.id} className="text-xs">
-                          {font.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="font-size-slider" className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Font Size ({fontSize}px)</Label>
-                  <Slider
-                    id="font-size-slider"
-                    min={12}
-                    max={20}
-                    step={1}
-                    value={[fontSize]}
-                    onValueChange={(value) => setFontSize(value[0])}
-                  />
-                </div>
-              </PopoverContent>
-            </Popover>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-full w-9 rounded-none border-l hover:bg-muted"
+              onClick={() => setPreferencesOpen(true)}
+              title="Preferences"
+            >
+              <Settings2 className="h-4 w-4" />
+            </Button>
           </div>
         </div>
 
@@ -476,6 +407,11 @@ export default function EditorLayout() {
         open={exportModalOpen}
         onClose={() => setExportModalOpen(false)}
         captureRef={captureRef}
+      />
+
+      <PreferencesModal
+        open={preferencesOpen}
+        onOpenChange={setPreferencesOpen}
       />
     </div>
   );
